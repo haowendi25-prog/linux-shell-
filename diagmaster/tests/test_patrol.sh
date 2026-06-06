@@ -1,282 +1,317 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 测试脚本：自动巡逻模块单元测试与集成测试
-# 要求：在项目根目录下运行
+# ==============================================================
+# DiagMaster 自动巡逻模块测试用例（修正版）
+# ==============================================================
+
+TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$TEST_DIR/.." && pwd)"
 
 # 导入公共库和断言库
-source "$(dirname "$0")/../lib/utils.sh"
-source "$(dirname "$0")/../lib/assert.sh"
+source "$PROJECT_ROOT/lib/utils.sh"
+source "$PROJECT_ROOT/lib/assert.sh"
 
-# 导入待测模块（但不执行主流程）
-source "$(dirname "$0")/../modules/patrol.sh"
+# 设置测试阈值（在导入模块前定义，防止被配置文件覆盖）
+CPU_WARN_THRESHOLD=80
+MEM_WARN_THRESHOLD=85
+DISK_WARN_THRESHOLD=90
+SERVICES_TO_CHECK="sshd cron"
+PROCESSES_TO_CHECK="sshd"
+ENABLE_ALERT=false
 
-# ========== 测试前准备 ==========
-# 保存原有命令，用于 Mock
-ORIGINAL_TOP=$(command -v top 2>/dev/null || echo "/usr/bin/top")
-ORIGINAL_FREE=$(command -v free 2>/dev/null || echo "/usr/bin/free")
-ORIGINAL_DF=$(command -v df 2>/dev/null || echo "/bin/df")
-ORIGINAL_SYSTEMCTL=$(command -v systemctl 2>/dev/null || echo "/bin/systemctl")
-ORIGINAL_PGREP=$(command -v pgrep 2>/dev/null || echo "/usr/bin/pgrep")
+# 导入待测模块
+source "$PROJECT_ROOT/modules/patrol.sh"
 
-# 创建临时工作目录
-TMPDIR=$(mktemp -d)
-# 使用 -E 选项保持环境变量原本的值，若某变量未设置则设置为默认
-CPU_WARN_THRESHOLD=${CPU_WARN_THRESHOLD:-80}
-MEM_WARN_THRESHOLD=${MEM_WARN_THRESHOLD:-85}
-DISK_WARN_THRESHOLD=${DISK_WARN_THRESHOLD:-90}
+# 再次强制覆盖（防止 patrol.sh 内部 source diag.conf 造成覆盖）
+CPU_WARN_THRESHOLD=80
+MEM_WARN_THRESHOLD=85
+DISK_WARN_THRESHOLD=90
+SERVICES_TO_CHECK="sshd cron"
+PROCESSES_TO_CHECK="sshd"
+ENABLE_ALERT=false
 
-# 临时替换命令为 Mock 版本，确保测试可重复
+# ---------- Mock 管理 ----------
+MOCK_DIR=""
+ORIGINAL_PATH="$PATH"
+
 setup_mocks() {
-    # Mock top: 输出模拟的 CPU 使用率
-    cat > "$TMPDIR/top" << 'EOF'
+    MOCK_DIR=$(mktemp -d)
+    if [ ! -d "$MOCK_DIR" ]; then
+        echo "FATAL: 无法创建临时 Mock 目录" >&2
+        exit 1
+    fi
+
+    # ===== 注意：所有 heredoc 的结束标记 EOF 必须位于行首，不能有任何缩进！=====
+
+    # mock top（正常 CPU 15%）
+    cat > "$MOCK_DIR/top" << 'EOF'
 #!/bin/bash
 echo "Cpu(s): 10.0 us, 5.0 sy, 0.0 ni, 80.0 id, 5.0 wa, 0.0 hi, 0.0 si, 0.0 st"
 EOF
-    chmod +x "$TMPDIR/top"
+    chmod +x "$MOCK_DIR/top"
 
-    # Mock free: 输出模拟的内存信息 (总共1000MB, 使用100MB=10%)
-    cat > "$TMPDIR/free" << 'EOF'
+    # mock free（正常内存 10%）
+    cat > "$MOCK_DIR/free" << 'EOF'
 #!/bin/bash
 echo "             total        used        free      shared  buff/cache   available"
 echo "Mem:           1000         100         900           0           0         900"
 EOF
-    chmod +x "$TMPDIR/free"
+    chmod +x "$MOCK_DIR/free"
 
-    # Mock df: 输出模拟的磁盘使用率 85%
-    cat > "$TMPDIR/df" << 'EOF'
+    # mock df（正常磁盘 85%）
+    cat > "$MOCK_DIR/df" << 'EOF'
 #!/bin/bash
 echo "Filesystem     1K-blocks    Used Available Use% Mounted on"
 echo "/dev/sda1       10000000 8500000   1500000  85% /"
 EOF
-    chmod +x "$TMPDIR/df"
+    chmod +x "$MOCK_DIR/df"
 
-    # Mock systemctl: 检查服务时根据参数返回成功或失败
-    cat > "$TMPDIR/systemctl" << 'EOF'
+    # mock systemctl
+    cat > "$MOCK_DIR/systemctl" << 'EOF'
 #!/bin/bash
-if [[ "$*" == *"sshd"* ]]; then
-    exit 0
-elif [[ "$*" == *"nginx"* ]]; then
-    exit 1
-elif [[ "$*" == *"cron"* ]]; then
-    exit 0
-else
-    exit 1
-fi
+case "$*" in
+    *"sshd"*) exit 0 ;;
+    *"cron"*)  exit 0 ;;
+    *"nginx"*) exit 1 ;;
+    *)         exit 1 ;;
+esac
 EOF
-    chmod +x "$TMPDIR/systemctl"
+    chmod +x "$MOCK_DIR/systemctl"
 
-    # Mock pgrep: 根据参数返回成功或失败
-    cat > "$TMPDIR/pgrep" << 'EOF'
+    # mock pgrep
+    cat > "$MOCK_DIR/pgrep" << 'EOF'
 #!/bin/bash
-if [ "$1" = "sshd" ]; then
-    exit 0
-elif [ "$1" = "nginx" ]; then
-    exit 1
-else
-    exit 0
-fi
+case "$1" in
+    "sshd")  exit 0 ;;
+    "nginx") exit 1 ;;
+    "cron")  exit 0 ;;
+    *)       exit 0 ;;
+esac
 EOF
-    chmod +x "$TMPDIR/pgrep"
+    chmod +x "$MOCK_DIR/pgrep"
 
-    # 将临时目录加入 PATH 最前面
-    export PATH="$TMPDIR:$PATH"
+    # mock dmesg（无 OOM）
+    cat > "$MOCK_DIR/dmesg" << 'EOF'
+#!/bin/bash
+echo "Some kernel messages"
+EOF
+    chmod +x "$MOCK_DIR/dmesg"
+
+    export PATH="$MOCK_DIR:$ORIGINAL_PATH"
 }
 
-# 恢复真实命令
 teardown_mocks() {
-    export PATH="${PATH#TMPDIR:}"
-    rm -rf "$TMPDIR"
+    export PATH="$ORIGINAL_PATH"
+    if [ -n "$MOCK_DIR" ] && [ -d "$MOCK_DIR" ]; then
+        rm -rf "$MOCK_DIR"
+    fi
+    MOCK_DIR=""
 }
 
-# ========== 测试用例 ==========
+# 辅助：覆盖某个 mock 命令
+overwrite_mock() {
+    local name="$1" content="$2"
+    printf '%s\n' "$content" > "$MOCK_DIR/$name"
+    chmod +x "$MOCK_DIR/$name"
+}
 
-# 因为函数内部调用命令，需先设置 Mock，然后测试函数
-test_check_cpu_normal() {
+# ---------- 单元测试 ----------
+
+test_cpu_normal() {
+    echo "[TEST] CPU 正常场景"
     setup_mocks
-    # CPU 使用率 15% (10+5) < 80 => 预期返回0
     local ret
     ret=$(check_cpu)
-    assert_equal "$ret" "0" "CPU 正常时返回0"
+    assert_equal "$ret" "0" "CPU 15%（阈值80%），应返回0"
     teardown_mocks
 }
 
-test_check_cpu_high() {
+test_cpu_high() {
+    echo "[TEST] CPU 高负载场景"
     setup_mocks
-    # 覆盖 top 输出高 CPU (95%)
-    cat > "$TMPDIR/top" << 'EOF'
-#!/bin/bash
-echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"
-EOF
-    chmod +x "$TMPDIR/top"
+    # 覆盖 top 为 95%
+    overwrite_mock "top" '#!/bin/bash
+echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     local ret
     ret=$(check_cpu)
-    assert_equal "$ret" "1" "CPU 超过阈值时返回1"
+    assert_equal "$ret" "1" "CPU 95%（阈值80%），应返回1"
     teardown_mocks
 }
 
-test_check_memory_normal() {
+test_memory_normal() {
+    echo "[TEST] 内存正常场景"
     setup_mocks
-    # 内存使用率 10% <85 => 0
     local ret
     ret=$(check_memory)
-    assert_equal "$ret" "0" "内存正常时返回0"
+    assert_equal "$ret" "0" "内存 10%（阈值85%），应返回0"
     teardown_mocks
 }
 
-test_check_memory_high() {
+test_memory_high() {
+    echo "[TEST] 内存高占用场景"
     setup_mocks
-    cat > "$TMPDIR/free" << 'EOF'
-#!/bin/bash
+    overwrite_mock "free" '#!/bin/bash
 echo "             total        used        free      shared  buff/cache   available"
-echo "Mem:           1000         900         100           0           0         100"
-EOF
-    chmod +x "$TMPDIR/free"
+echo "Mem:           1000         900         100           0           0         100"'
     local ret
     ret=$(check_memory)
-    assert_equal "$ret" "1" "内存超过阈值时返回1"
+    assert_equal "$ret" "1" "内存 90%（阈值85%），应返回1"
     teardown_mocks
 }
 
-test_check_disk_normal() {
+test_disk_normal() {
+    echo "[TEST] 磁盘正常场景"
     setup_mocks
-    # 85% <90 => 0
     local ret
     ret=$(check_disk)
-    assert_equal "$ret" "0" "磁盘使用率正常时返回0"
+    assert_equal "$ret" "0" "磁盘 85%（阈值90%），应返回0"
     teardown_mocks
 }
 
-test_check_disk_high() {
+test_disk_high() {
+    echo "[TEST] 磁盘高占用场景"
     setup_mocks
-    cat > "$TMPDIR/df" << 'EOF'
-#!/bin/bash
-echo "/dev/sda1       10000000 9500000    500000  95% /"
-EOF
-    chmod +x "$TMPDIR/df"
+    overwrite_mock "df" '#!/bin/bash
+echo "/dev/sda1       10000000 9500000    500000  95% /"'
     local ret
     ret=$(check_disk)
-    assert_equal "$ret" "1" "磁盘超过阈值时返回1"
+    assert_equal "$ret" "1" "磁盘 95%（阈值90%），应返回1"
     teardown_mocks
 }
 
-test_check_services_all_ok() {
+test_services_all_ok() {
+    echo "[TEST] 服务全部正常"
     setup_mocks
     SERVICES_TO_CHECK="sshd cron"
     local ret
     ret=$(check_services)
-    assert_equal "$ret" "0" "所有服务正常运行时返回0"
+    assert_equal "$ret" "0" "所有服务正常，应返回0"
     teardown_mocks
 }
 
-test_check_services_some_down() {
+test_services_partial_fail() {
+    echo "[TEST] 部分服务故障"
     setup_mocks
     SERVICES_TO_CHECK="sshd nginx"
     local ret
     ret=$(check_services)
-    # 预期返回1，因为 nginx 关闭
-    assert_equal "$ret" "1" "部分服务故障时返回1"
+    assert_equal "$ret" "1" "存在故障服务，应返回1"
     teardown_mocks
 }
 
-test_check_processes_ok() {
+test_processes_ok() {
+    echo "[TEST] 关键进程存在"
     setup_mocks
     PROCESSES_TO_CHECK="sshd"
     local ret
     ret=$(check_processes)
-    assert_equal "$ret" "0" "关键进程存在时返回0"
+    assert_equal "$ret" "0" "进程存在，应返回0"
     teardown_mocks
 }
 
-test_check_processes_missing() {
+test_processes_missing() {
+    echo "[TEST] 关键进程缺失"
     setup_mocks
     PROCESSES_TO_CHECK="sshd nginx"
     local ret
     ret=$(check_processes)
-    assert_equal "$ret" "1" "有进程缺失时返回1"
+    assert_equal "$ret" "1" "进程缺失，应返回1"
     teardown_mocks
 }
 
-test_check_logs_mock() {
-    # 日志检查依赖真实命令，简单测试无错误场景
-    # 我们通过预先设置环境来模拟，或者跳过真实日志读取
-    # 这里演示：如果 dmesg 不可用，应返回0
+test_logs_normal() {
+    echo "[TEST] 日志无异常"
+    setup_mocks
     local ret
-    # 临时屏蔽命令
-    function dmesg() { return 1; }
     ret=$(check_logs)
-    assert_equal "$ret" "0" "日志命令缺失时返回0（默认正常）"
-    unset -f dmesg
+    assert_equal "$ret" "0" "无 OOM/SSH 爆破，应返回0"
+    teardown_mocks
 }
 
-# 集成测试：模拟完整巡逻流程（不发送邮件）
-test_run_patrol_mock_all_ok() {
+test_logs_oom() {
+    echo "[TEST] 日志检测到 OOM"
     setup_mocks
-    # 所有 Mock 均为正常值
+    overwrite_mock "dmesg" '#!/bin/bash
+echo "Out of memory: Kill process"
+echo "Out of memory: Kill process"'
+    local ret
+    ret=$(check_logs)
+    assert_equal "$ret" "1" "检测到 OOM，应返回1"
+    teardown_mocks
+}
+
+# ---------- 集成测试 ----------
+
+test_patrol_all_ok() {
+    echo "[TEST] 集成：全部正常"
+    setup_mocks
+    PATROL_REPORT_DIR="$MOCK_DIR/reports"
+    LOG_FILE="$MOCK_DIR/patrol.log"
     SERVICES_TO_CHECK="sshd cron"
     PROCESSES_TO_CHECK="sshd"
-    PATROL_REPORT_DIR="$TMPDIR/reports"
-    LOG_FILE="$TMPDIR/patrol.log"
     run_patrol
     local ret=$?
-    # 因为所有检查正常，预期返回0
-    assert_equal "$ret" "0" "集成测试：全部正常时 run_patrol 返回0"
-    # 检查报告文件是否存在且包含正常状态
-    local report_file
-    report_file=$(ls -1t "$PATROL_REPORT_DIR" | head -n1)
-    if [ -f "$PATROL_REPORT_DIR/$report_file" ]; then
-        assert_contains "$(cat "$PATROL_REPORT_DIR/$report_file")" "正常 ✅" "报告包含正常标识"
+    assert_equal "$ret" "0" "所有检查正常，run_patrol 返回0"
+
+    local report
+    report=$(ls -1t "$PATROL_REPORT_DIR"/*.md 2>/dev/null | head -n1)
+    if [ -f "$report" ]; then
+        assert_contains "$(cat "$report")" "正常 ✅" "报告包含'正常 ✅'"
     else
-        echo "✘ FAIL: 报告文件未生成"
+        TESTS_RUN=$((TESTS_RUN+1))
+        TEST_FAILED=$((TEST_FAILED+1))
+        echo "  ✘ FAIL: 报告文件未生成"
     fi
     teardown_mocks
 }
 
-test_run_patrol_mock_with_failures() {
+test_patrol_with_failures() {
+    echo "[TEST] 集成：存在异常"
     setup_mocks
-    # 设置 nginx 服务关闭、nginx 进程缺失，其他正常
-    cat > "$TMPDIR/top" << 'EOF'
-#!/bin/bash
-echo "Cpu(s): 60.0 us, 30.0 sy, 0.0 ni, 10.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"
-EOF
-    chmod +x "$TMPDIR/top"
-    # 内存正常，磁盘正常
+    overwrite_mock "top" '#!/bin/bash
+echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     SERVICES_TO_CHECK="sshd nginx"
     PROCESSES_TO_CHECK="sshd nginx"
-    PATROL_REPORT_DIR="$TMPDIR/reports"
-    LOG_FILE="$TMPDIR/patrol.log"
+    PATROL_REPORT_DIR="$MOCK_DIR/reports"
+    LOG_FILE="$MOCK_DIR/patrol.log"
     run_patrol
     local ret=$?
-    # 预期有异常，返回1
-    assert_equal "$ret" "1" "集成测试：存在异常时 run_patrol 返回1"
-    # 检查报告内容
-    local report_file
-    report_file=$(ls -1t "$PATROL_REPORT_DIR" | head -n1)
-    if [ -f "$PATROL_REPORT_DIR/$report_file" ]; then
-        assert_contains "$(cat "$PATROL_REPORT_DIR/$report_file")" "存在异常" "报告包含异常提示"
+    assert_equal "$ret" "1" "存在异常，run_patrol 返回1"
+
+    local report
+    report=$(ls -1t "$PATROL_REPORT_DIR"/*.md 2>/dev/null | head -n1)
+    if [ -f "$report" ]; then
+        assert_contains "$(cat "$report")" "存在异常" "报告包含'存在异常'"
     fi
     teardown_mocks
 }
 
-# ========== 运行所有测试 ==========
+# ---------- 运行入口 ----------
+
 run_all_tests() {
-    echo "========== 开始执行巡逻模块测试 =========="
-    test_check_cpu_normal
-    test_check_cpu_high
-    test_check_memory_normal
-    test_check_memory_high
-    test_check_disk_normal
-    test_check_disk_high
-    test_check_services_all_ok
-    test_check_services_some_down
-    test_check_processes_ok
-    test_check_processes_missing
-    test_check_logs_mock
-    test_run_patrol_mock_all_ok
-    test_run_patrol_mock_with_failures
     echo ""
+    echo "=============================================="
+    echo "  DiagMaster 自动巡逻模块 - 单元/集成测试"
+    echo "=============================================="
+    echo ""
+
+    test_cpu_normal
+    test_cpu_high
+    test_memory_normal
+    test_memory_high
+    test_disk_normal
+    test_disk_high
+    test_services_all_ok
+    test_services_partial_fail
+    test_processes_ok
+    test_processes_missing
+    test_logs_normal
+    test_logs_oom
+    test_patrol_all_ok
+    test_patrol_with_failures
+
     test_summary
 }
 
-# 执行
 run_all_tests

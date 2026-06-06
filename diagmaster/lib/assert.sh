@@ -10,10 +10,10 @@ assert_equal() {
     TESTS_RUN=$((TESTS_RUN+1))
     if [ "$val" = "$expected" ]; then
         TEST_PASSED=$((TEST_PASSED+1))
-        echo "✔ PASS: $msg"
+        echo -e "  ✔ PASS: $msg"
     else
         TEST_FAILED=$((TEST_FAILED+1))
-        echo "✘ FAIL: $msg (expected '$expected', got '$val')"
+        echo -e "  ✘ FAIL: $msg (expected '$expected', got '$val')"
     fi
 }
 
@@ -22,34 +22,21 @@ assert_contains() {
     TESTS_RUN=$((TESTS_RUN+1))
     if [[ "$haystack" == *"$needle"* ]]; then
         TEST_PASSED=$((TEST_PASSED+1))
-        echo "✔ PASS: $msg"
+        echo -e "  ✔ PASS: $msg"
     else
         TEST_FAILED=$((TEST_FAILED+1))
-        echo "✘ FAIL: $msg (string does not contain '$needle')"
-    fi
-}
-
-assert_return() {
-    local expected_ret="$1" cmd="$2" msg="${3:-}"
-    TESTS_RUN=$((TESTS_RUN+1))
-    if eval "$cmd" &>/dev/null; then
-        actual_ret=0
-    else
-        actual_ret=$?
-    fi
-    if [ "$actual_ret" = "$expected_ret" ]; then
-        TEST_PASSED=$((TEST_PASSED+1))
-        echo "✔ PASS: $msg"
-    else
-        TEST_FAILED=$((TEST_FAILED+1))
-        echo "✘ FAIL: $msg (expected return $expected_ret, got $actual_ret)"
+        echo -e "  ✘ FAIL: $msg (string does not contain '$needle')"
     fi
 }
 
 test_summary() {
-    echo "=============================="
-    echo "测试完成: 通过 $TEST_PASSED / 失败 $TEST_FAILED / 总计 $TESTS_RUN"
-    echo "=============================="
+    echo ""
+    echo "=============================================="
+    echo -n "测试完成: "
+    echo -n "通过 ${GREEN}${TEST_PASSED}${NC} / "
+    echo -n "失败 ${RED}${TEST_FAILED}${NC} / "
+    echo "总计 ${TESTS_RUN}"
+    echo "=============================================="
     if [ $TEST_FAILED -gt 0 ]; then
         return 1
     else

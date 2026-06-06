@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# 性能指标多进程后台并发采集器
+# 日志分析特征提取模块
 
-DATA_DIR="./data"
+DATA_DIR="$(dirname "$0")/../data"
 mkdir -p "$DATA_DIR"
 
-( top -bn1 | grep "Cpu(s)" | awk '{print $2+$4}' > "$DATA_DIR/cpu.tmp" ) & pid1=$!
-( free -m | awk '/Mem:/ {print $3/$2*100}' > "$DATA_DIR/mem.tmp" ) & pid2=$!
+# 内核环形缓冲区 OOM 统计
+if command -v dmesg >/dev/null 2>&1; then
+    dmesg 2>/dev/null | grep -c -i "out of memory" > "$DATA_DIR/oom_count.tmp" || echo "0" > "$DATA_DIR/oom_count.tmp"
+else
+    echo "0" > "$DATA_DIR/oom_count.tmp"
+fi
 
-# 【测试修改点】：注释掉真实磁盘采集，强行注入 95% 极值边界
-# ( df -h / | awk 'NR==2 {print $5}' | sed 's/%//' > "$DATA_DIR/disk.tmp" ) & pid3=$!
-echo "95" > "$DATA_DIR/disk.tmp" & pid3=$!
-
-wait $pid1 $pid2 $pid3
+# 安全日志 SSH 暴破统计
+if [ -f /var/log/auth.log ]; then
+    grep -c "Failed password" /var/log/auth.log 2>/dev/null > "$DATA_DIR/ssh_fail.tmp" || echo "0" > "$DATA_DIR/ssh_fail.tmp"
+else
+    echo "0" > "$DATA_DIR/ssh_fail.tmp"
+fi
