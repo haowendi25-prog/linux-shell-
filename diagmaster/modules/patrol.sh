@@ -139,10 +139,14 @@ check_processes() {
 check_logs() {
     local oom=0 ssh_fail=0 abnormal=0
     if command_exists dmesg; then
-        oom=$(dmesg 2>/dev/null | grep -c -i "out of memory" || echo 0)
+        oom=$(dmesg 2>/dev/null | grep -c -i "out of memory" || true)
+        oom=${oom//[^0-9]/}
+        [ -z "$oom" ] && oom=0
     fi
     if [ -f /var/log/auth.log ]; then
-        ssh_fail=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || echo 0)
+        ssh_fail=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || true)
+        ssh_fail=${ssh_fail//[^0-9]/}
+        [ -z "$ssh_fail" ] && ssh_fail=0
     fi
     if [ "$oom" -gt 0 ]; then
         log_warn "检测到 OOM 事件: $oom 次"
@@ -158,7 +162,6 @@ check_logs() {
         echo 0
     fi
 }
-
 # ========== 巡逻主流程 ==========
 
 init_report() {

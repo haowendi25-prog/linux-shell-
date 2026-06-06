@@ -42,16 +42,14 @@ setup_mocks() {
         exit 1
     fi
 
-    # ===== 注意：所有 heredoc 的结束标记 EOF 必须位于行首，不能有任何缩进！=====
-
-    # mock top（正常 CPU 15%）
+    # mock top（CPU 15%）
     cat > "$MOCK_DIR/top" << 'EOF'
 #!/bin/bash
 echo "Cpu(s): 10.0 us, 5.0 sy, 0.0 ni, 80.0 id, 5.0 wa, 0.0 hi, 0.0 si, 0.0 st"
 EOF
     chmod +x "$MOCK_DIR/top"
 
-    # mock free（正常内存 10%）
+    # mock free（内存 10%）
     cat > "$MOCK_DIR/free" << 'EOF'
 #!/bin/bash
 echo "             total        used        free      shared  buff/cache   available"
@@ -59,7 +57,7 @@ echo "Mem:           1000         100         900           0           0       
 EOF
     chmod +x "$MOCK_DIR/free"
 
-    # mock df（正常磁盘 85%）
+    # mock df（磁盘 85%）
     cat > "$MOCK_DIR/df" << 'EOF'
 #!/bin/bash
 echo "Filesystem     1K-blocks    Used Available Use% Mounted on"
@@ -79,10 +77,11 @@ esac
 EOF
     chmod +x "$MOCK_DIR/systemctl"
 
-    # mock pgrep
+    # mock pgrep（取最后一个参数作为进程名）
     cat > "$MOCK_DIR/pgrep" << 'EOF'
 #!/bin/bash
-case "$1" in
+proc="${@: -1}"
+case "$proc" in
     "sshd")  exit 0 ;;
     "nginx") exit 1 ;;
     "cron")  exit 0 ;;
@@ -101,6 +100,12 @@ EOF
     export PATH="$MOCK_DIR:$ORIGINAL_PATH"
 }
 
+overwrite_mock() {
+    local name="$1" content="$2"
+    printf '%s\n' "$content" > "$MOCK_DIR/$name"
+    chmod +x "$MOCK_DIR/$name"
+}
+
 teardown_mocks() {
     export PATH="$ORIGINAL_PATH"
     if [ -n "$MOCK_DIR" ] && [ -d "$MOCK_DIR" ]; then
@@ -109,12 +114,6 @@ teardown_mocks() {
     MOCK_DIR=""
 }
 
-# 辅助：覆盖某个 mock 命令
-overwrite_mock() {
-    local name="$1" content="$2"
-    printf '%s\n' "$content" > "$MOCK_DIR/$name"
-    chmod +x "$MOCK_DIR/$name"
-}
 
 # ---------- 单元测试 ----------
 
@@ -173,6 +172,7 @@ test_disk_high() {
     echo "[TEST] 磁盘高占用场景"
     setup_mocks
     overwrite_mock "df" '#!/bin/bash
+echo "Filesystem     1K-blocks    Used Available Use% Mounted on"
 echo "/dev/sda1       10000000 9500000    500000  95% /"'
     local ret
     ret=$(check_disk)
