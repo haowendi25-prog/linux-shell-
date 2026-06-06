@@ -27,6 +27,11 @@ ADMIN_USER=${ADMIN_USER:-"admin"}
 ADMIN_PASS=${ADMIN_PASS:-"12345"}
 NODE_DB="$ROOT_DIR/data/nodes.txt"
 touch "$NODE_DB"
+# 如果节点数据库为空，自动添加本机作为默认节点
+if [ ! -s "$NODE_DB" ]; then
+    echo "$(hostname)" >> "$NODE_DB"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - 自动添加本机节点: $(hostname)" >> "$LOG_FILE"
+fi
 
 # 导入功能模块
 source "$ROOT_DIR/modules/collector.sh" 2>/dev/null || true
