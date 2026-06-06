@@ -156,8 +156,12 @@ run_patrol_menu() {
     header
     echo -e "${YELLOW}--- [模块 5] 自动巡逻巡检 ---${NC}"
     # 调用 patrol.sh 中的 run_patrol 函数
+    # 临时禁用 set -e，因为 run_patrol 在发现异常时返回非零，
+    # 防止 set -e 导致脚本直接退出
+    set +e
     run_patrol
     local ret=$?
+    set -e
     if [ $ret -eq 0 ]; then
         echo -e "${GREEN}✓ 巡逻完成：系统状态正常。${NC}"
     else
