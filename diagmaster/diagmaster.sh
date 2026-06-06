@@ -193,21 +193,106 @@ main_menu() {
         echo " 3) 内核日志清洗与安全审计"
         echo " 4) 智能化磁盘清理与自愈"
         echo " 5) 启动自动巡逻巡检"
-        echo " 6) 关于项目技术架构与分工"
-        echo " 7) 安全退出"
-        read -p "请选择 (1-7): " ch
+        echo " 6) 后台巡逻守护（daemon）"
+        echo " 7) 关于项目技术架构与分工"
+        echo " 8) 安全退出"
+        read -p "请选择 (1-8): " ch
         case "$ch" in
             1) node_management ;;
             2) run_collector ;;
             3) run_log_audit ;;
             4) disk_cleanup ;;
             5) run_patrol_menu ;;
-            6) about_project ;;
-            7) echo "感谢使用 DiagMaster。"; exit 0 ;;
+            6) patrol_daemon_menu ;;
+            7) about_project ;;
+            8) echo "感谢使用 DiagMaster。"; exit 0 ;;
             *) echo "无效指令"; sleep 1 ;;
         esac
     done
 }
+
+patrol_daemon_menu() {
+    while true; do
+        header
+        echo -e "${YELLOW}--- [模块 5b] 后台巡逻守护进程管理 ---${NC}"
+        echo " 1) 启动后台巡逻守护进程"
+        echo " 2) 停止后台巡逻守护进程"
+        echo " 3) 查看守护进程状态"
+        echo " 4) 返回主菜单"
+        read -p "请输入子菜单指令 (1-4): " nc
+        case "$nc" in
+            1)
+                set +e
+                run_patrol_daemon
+                set -e
+                read -p "按回车键返回..." _
+                ;;
+            2)
+                set +e
+                stop_patrol_daemon
+                set -e
+                read -p "按回车键返回..." _
+                ;;
+            3)
+                set +e
+                patrol_daemon_status
+                set -e
+                read -p "按回车键返回..." _
+                ;;
+            4) return ;;
+            *) echo "无效指令"; sleep 1 ;;
+        esac
+    done
+}
+
+# ========== 命令行参数处理 ==========
+
+print_usage() {
+    echo "用法: $0 [选项]"
+    echo ""
+    echo "选项:"
+    echo "  (无参数)          进入交互式主菜单"
+    echo "  --daemon           启动后台巡逻守护进程"
+    echo "  --stop             停止后台巡逻守护进程"
+    echo "  --status           查看巡逻守护进程状态"
+    echo "  --patrol           执行一次性巡逻检查"
+    echo "  -h, --help         显示帮助信息"
+}
+
+# 若传入命令行参数则直接执行相应操作，不需要认证
+if [ $# -gt 0 ]; then
+    case "$1" in
+        --daemon)
+            source "$ROOT_DIR/modules/patrol.sh"
+            run_patrol_daemon
+            exit $?
+            ;;
+        --stop)
+            source "$ROOT_DIR/modules/patrol.sh"
+            stop_patrol_daemon
+            exit $?
+            ;;
+        --status)
+            source "$ROOT_DIR/modules/patrol.sh"
+            patrol_daemon_status
+            exit $?
+            ;;
+        --patrol)
+            source "$ROOT_DIR/modules/patrol.sh"
+            run_patrol
+            exit $?
+            ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}未知参数: $1${NC}"
+            print_usage
+            exit 1
+            ;;
+    esac
+fi
 
 # ========== 安全认证 ==========
 header

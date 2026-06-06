@@ -19,6 +19,17 @@ PROCESSES_TO_CHECK=${PROCESSES_TO_CHECK:-"sshd"}
 ENABLE_ALERT=${ENABLE_ALERT:-false}
 ALERT_EMAIL=${ALERT_EMAIL:-"root@localhost"}
 PATROL_REPORT_DIR=${PATROL_REPORT_DIR:-"./reports"}
+PATROL_INTERVAL=${PATROL_INTERVAL:-300}
+DAEMON_PID_FILE="${PATROL_REPORT_DIR}/../data/patrol_daemon.pid"
+
+# 检测 systemd 是否真正在运行（而非仅 systemctl 二进制存在）
+is_systemd_running() {
+    # 方法1：检查 /run/systemd/system 目录是否存在
+    # 方法2：检查 PID 1 是否为 systemd
+    [ -d /run/systemd/system ] && return 0
+    [ "$(cat /proc/1/comm 2>/dev/null)" = "systemd" ] && return 0
+    return 1
+}
 
 # ========== 检查函数 ==========
 
@@ -94,7 +105,8 @@ check_services() {
     local services failed=0
     read -ra services <<< "$SERVICES_TO_CHECK"
     for svc in "${services[@]}"; do
-        if command_exists systemctl; then
+        # 只有 systemctl 存在且 systemd 真正运行时才使用 systemctl
+        if command_exists systemctl && is_systemd_running; then
             if systemctl is-active --quiet "$svc" 2>/dev/null; then
                 log_info "服务 $svc 正常"
             else
@@ -102,9 +114,9 @@ check_services() {
                 ((failed++))
             fi
         else
-            # 无 systemd，使用 ps 粗略检查
+            # systemd 未运行或无 systemctl，使用 pgrep 检查进程
             if pgrep -x "$svc" &>/dev/null; then
-                log_info "进程 $svc 存在（systemctl 不可用）"
+                log_info "进程 $svc 存在"
             else
                 log_warn "进程 $svc 缺失"
                 ((failed++))
@@ -233,8 +245,154 @@ run_patrol() {
     return $overall_fail
 }
 
-# 若直接执行本脚本，则运行巡逻
+# ========== 后台守护巡逻模式 ==========
+
+# 后台巡逻主循环（作为独立脚本执行）
+_daemon_loop() {
+    local pid_file="$1" interval="$2"
+    echo "$BASHPID" > "$pid_file"
+    local round=0
+    while true; do
+        round=$((round + 1))
+        log_info "--- 巡逻轮次 #${round} ---"
+        set +e
+        run_patrol
+        local ret=$?
+        set +e  # 保持 set +e 状态
+        if [ $ret -ne 0 ]; then
+            echo -e "${RED}⚠ [$(date '+%H:%M:%S')] 巡逻轮次 #${round}: 发现异常项！${NC}"
+        else
+            echo -e "${GREEN}✓ [$(date '+%H:%M:%S')] 巡逻轮次 #${round}: 系统正常${NC}"
+        fi
+        sleep "$interval"
+    done
+}
+
+# 后台持续巡逻（daemon 模式）
+run_patrol_daemon() {
+    local pid_file="${DAEMON_PID_FILE}"
+
+    # 检查是否已有守护进程在运行
+    if [ -f "$pid_file" ]; then
+        local old_pid
+        old_pid=$(cat "$pid_file" 2>/dev/null)
+        if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+            log_warn "巡逻守护进程已在运行中 (PID: $old_pid)"
+            echo -e "${YELLOW}巡逻守护进程已在运行 (PID: $old_pid)${NC}"
+            return 1
+        else
+            # pid 文件存在但进程不存在，清理旧文件
+            rm -f "$pid_file"
+        fi
+    fi
+
+    # 确保 data 目录存在
+    mkdir -p "$(dirname "$pid_file")"
+
+    log_info "启动巡逻守护进程，间隔 ${PATROL_INTERVAL} 秒"
+    echo -e "${GREEN}启动巡逻守护进程，间隔 ${PATROL_INTERVAL} 秒${NC}"
+    echo -e "${YELLOW}使用 --stop 参数停止，或 --status 查看状态${NC}"
+
+    # 使用 nohup 启动独立进程，确保父脚本退出后仍继续运行
+    nohup bash -c "
+        source '${SCRIPT_DIR}/../lib/utils.sh'
+        source '${SCRIPT_DIR}/patrol.sh'
+        _daemon_loop '$pid_file' '$PATROL_INTERVAL'
+    " < /dev/null >> "${PATROL_REPORT_DIR}/../logs/patrol_daemon.log" 2>&1 &
+
+    local daemon_pid=$!
+    # 等待子进程写入 PID 文件
+    sleep 0.3
+    if [ -f "$pid_file" ]; then
+        local written_pid
+        written_pid=$(cat "$pid_file" 2>/dev/null)
+        if [ -n "$written_pid" ] && kill -0 "$written_pid" 2>/dev/null; then
+            echo -e "${GREEN}巡逻守护进程已启动 (PID: $written_pid)${NC}"
+            log_info "巡逻守护进程已启动 (PID: $written_pid)"
+        else
+            echo -e "${YELLOW}巡逻守护进程已启动 (nohup PID: $daemon_pid)${NC}"
+            log_info "巡逻守护进程已启动 (nohup PID: $daemon_pid)"
+        fi
+    else
+        echo -e "${YELLOW}巡逻守护进程已启动 (nohup PID: $daemon_pid)${NC}"
+        log_info "巡逻守护进程已启动 (nohup PID: $daemon_pid)"
+    fi
+
+    return 0
+}
+
+# 停止后台巡逻守护进程
+stop_patrol_daemon() {
+    local pid_file="${DAEMON_PID_FILE}"
+
+    if [ ! -f "$pid_file" ]; then
+        echo -e "${YELLOW}未找到运行中的巡逻守护进程${NC}"
+        return 1
+    fi
+
+    local pid
+    pid=$(cat "$pid_file" 2>/dev/null)
+    if [ -z "$pid" ]; then
+        echo -e "${YELLOW}PID 文件为空${NC}"
+        rm -f "$pid_file"
+        return 1
+    fi
+
+    if kill -0 "$pid" 2>/dev/null; then
+        # 先杀掉主进程，再杀掉子进程（后台的 while 循环）
+        kill "$pid" 2>/dev/null || true
+        pkill -P "$pid" 2>/dev/null || true
+        sleep 0.5
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        rm -f "$pid_file"
+        echo -e "${GREEN}巡逻守护进程已停止 (PID: $pid)${NC}"
+        log_info "巡逻守护进程已停止 (PID: $pid)"
+        return 0
+    else
+        echo -e "${YELLOW}进程不存在 (PID: $pid)，清理 PID 文件${NC}"
+        rm -f "$pid_file"
+        return 1
+    fi
+}
+
+# 检查巡逻守护进程状态
+patrol_daemon_status() {
+    local pid_file="${DAEMON_PID_FILE}"
+
+    if [ -f "$pid_file" ]; then
+        local pid
+        pid=$(cat "$pid_file" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            echo -e "${GREEN}巡逻守护进程正在运行 (PID: $pid)${NC}"
+            return 0
+        else
+            echo -e "${YELLOW}PID 文件存在但进程已失效${NC}"
+            rm -f "$pid_file"
+            return 1
+        fi
+    else
+        echo -e "${YELLOW}巡逻守护进程未运行${NC}"
+        return 1
+    fi
+}
+
+# 若直接执行本脚本，支持参数
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    run_patrol
+    case "${1:-}" in
+        --daemon)
+            run_patrol_daemon
+            ;;
+        --stop)
+            stop_patrol_daemon
+            ;;
+        --status)
+            patrol_daemon_status
+            ;;
+        *)
+            run_patrol
+            ;;
+    esac
     exit $?
 fi
