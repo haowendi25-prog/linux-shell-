@@ -236,7 +236,7 @@ ls reports/
 
 ## 怎么跑测试？
 
-项目自带自动化测试，**一共 32 个测试用例**，可以一键验证所有功能：
+项目自带自动化测试，**一共 31 个测试用例**，可以一键验证所有功能：
 
 ```bash
 cd ~/diagmaster/diagmaster
@@ -248,7 +248,7 @@ bash tests/run_all_tests.sh
 bash tests/test_patrol.sh      # 巡逻模块单元/集成/异常测试 (18个用例)
 bash tests/test_collector.sh   # 性能采集模块测试 (3个用例)
 bash tests/test_boundary.sh    # 边界条件测试 (6个用例)
-bash tests/test_auto.sh        # 自动化运行验证测试 (5个用例)
+bash tests/test_auto.sh        # 自动化运行验证测试 (4个用例)
 bash tests/test_project_report6.sh  # 交互式综合测试菜单（用于答辩截图）
 ```
 
@@ -300,7 +300,7 @@ diagmaster/                       # 项目根目录
 │   ├── test_patrol.sh            # 巡逻模块测试 (18例)
 │   ├── test_collector.sh         # 采集模块测试 (3例)
 │   ├── test_boundary.sh          # 边界条件测试 (6例)
-│   ├── test_auto.sh              # 自动化验证测试 (5例)
+│   ├── test_auto.sh              # 自动化验证测试 (4例)
 │   ├── test_project_report6.sh   # 交互式综合测试菜单
 │   ├── lib/
 │   │   └── mock_utils.sh         # 共享Mock工具库
@@ -388,7 +388,7 @@ crontab -e
 - **核心技术**：Bash、grep、awk、sed、并发进程、管道
 - **设计理念**：模块化、配置与代码分离、自带完整测试
 - **代码总量**：约 1392 行（含注释），非空非注释约 1150 行
-- **测试覆盖**：32 个测试用例，覆盖功能/异常/边界/自动化场景
+- **测试覆盖**：31 个测试用例，覆盖功能/异常/边界/自动化场景
 
 ---
 

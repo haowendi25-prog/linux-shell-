@@ -32,10 +32,7 @@ assert_contains() {
 test_summary() {
     echo ""
     echo "=============================================="
-    echo -n "测试完成: "
-    echo -n "通过 ${GREEN}${TEST_PASSED}${NC} / "
-    echo -n "失败 ${RED}${TEST_FAILED}${NC} / "
-    echo "总计 ${TESTS_RUN}"
+    printf "测试完成: 通过 ${GREEN}${TEST_PASSED}${NC} / 失败 ${RED}${TEST_FAILED}${NC} / 总计 ${TESTS_RUN}\n"
     echo "=============================================="
     if [ $TEST_FAILED -gt 0 ]; then
         return 1

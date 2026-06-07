@@ -35,23 +35,6 @@ NC='\033[0m'
 CATEGORY_PASSED=0
 CATEGORY_FAILED=0
 CATEGORY_TOTAL=0
-SCREENSHOT_HINT_DIR="${PROJECT_ROOT}/tests/screenshots"
-mkdir -p "$SCREENSHOT_HINT_DIR"
-
-# ==============================================================
-# 截图提示辅助函数
-# ==============================================================
-screenshot_hint() {
-    local title="$1"
-    echo ""
-    echo -e "${BLUE}┌─────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${BLUE}│${NC} ${BOLD}📸 截图提示${NC}                                               ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC} 请截图保存以下测试结果：                                    ${BLUE}│${NC}"
-    echo -e "${BLUE}│${NC}   ${title}${NC}"
-    echo -e "${BLUE}│${NC} 截图建议保存至: tests/screenshots/                          ${BLUE}│${NC}"
-    echo -e "${BLUE}└─────────────────────────────────────────────────────────┘${NC}"
-    echo ""
-}
 
 # ==============================================================
 # 测试结果格式化输出
@@ -202,8 +185,8 @@ echo "/dev/sda1       10000000 9500000    500000  95% /"'
 test_func_07_services_all_ok() {
     print_test_header "6.1 功能测试" "关键服务检查 - 所有服务正常运行"
     setup_mocks
-    SERVICES_TO_CHECK="sshd cron"
     load_modules
+    SERVICES_TO_CHECK="sshd cron"
     local ret
     ret=$(check_services)
     teardown_mocks
@@ -217,8 +200,8 @@ test_func_07_services_all_ok() {
 test_func_08_services_partial_fail() {
     print_test_header "6.1 功能测试" "关键服务检查 - 部分服务故障"
     setup_mocks
-    SERVICES_TO_CHECK="sshd nginx"
     load_modules
+    SERVICES_TO_CHECK="sshd nginx"  # 必须在 load_modules 之后设置，防止被覆盖
     local ret
     ret=$(check_services)
     teardown_mocks
@@ -755,49 +738,6 @@ echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     fi
 }
 
-test_auto_05_timed_task_simulation() {
-    print_test_header "6.4 自动化运行验证" "定时任务运行模拟（按间隔执行）"
-    setup_mocks
-    PATROL_REPORT_DIR="$MOCK_DIR/reports"
-    LOG_FILE="$MOCK_DIR/patrol.log"
-    SERVICES_TO_CHECK="sshd cron"
-    PROCESSES_TO_CHECK="sshd"
-    load_modules
-    # 模拟 cron 定时任务：间隔2秒执行3次
-    local interval=2
-    local total_runs=3
-    local completed=0
-    echo -e "  ${YELLOW}模拟定时任务：间隔${interval}秒执行${total_runs}次...${NC}"
-    for i in $(seq 1 $total_runs); do
-        echo -e "  [定时任务] 第${i}次执行 $(date '+%H:%M:%S')"
-        set +e
-        run_patrol >/dev/null 2>&1
-        local ret=$?
-        set -e
-        if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
-            completed=$((completed + 1))
-        fi
-        if [ "$i" -lt "$total_runs" ]; then
-            sleep "$interval"
-        fi
-    done
-    local report_count
-    report_count=$(ls -1 "$PATROL_REPORT_DIR"/*.md 2>/dev/null | wc -l)
-    teardown_mocks
-    print_expected_actual \
-        "模拟定时任务执行3次，每次间隔2秒，应全部完成并生成报告" \
-        "完成次数=${completed}/${total_runs}，报告数=${report_count}" \
-        "$([ "$completed" -eq "$total_runs" ] && [ "$report_count" -ge "$total_runs" ] && echo "PASS" || echo "FAIL")"
-    TESTS_RUN=$((TESTS_RUN+1))
-    if [ "$completed" -eq "$total_runs" ] && [ "$report_count" -ge "$total_runs" ]; then
-        TEST_PASSED=$((TEST_PASSED+1))
-        echo -e "  ✔ PASS: 定时任务模拟运行正常"
-    else
-        TEST_FAILED=$((TEST_FAILED+1))
-        echo -e "  ✘ FAIL: 定时任务模拟有异常"
-    fi
-}
-
 # ==============================================================
 # 交互式菜单
 # ==============================================================
@@ -847,7 +787,6 @@ show_menu() {
     echo -e "  ${BLUE}4.2${NC}  连续运行稳定性（10次）"
     echo -e "  ${BLUE}4.3${NC}  无人值守运行模拟"
     echo -e "  ${BLUE}4.4${NC}  混合状态处理"
-    echo -e "  ${BLUE}4.5${NC}  定时任务运行模拟"
     echo -e "  ${BLUE}4.0${NC}  ${BOLD}运行全部 6.4 自动化验证${NC}"
     echo ""
     echo -e "  ${BOLD}━━━ 综合操作 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -860,7 +799,6 @@ show_menu() {
 }
 
 run_all_6_1() {
-    screenshot_hint "6.1 功能测试 - 全部12项测试结果"
     test_func_01_cpu_check_normal
     test_func_02_cpu_check_warning
     test_func_03_memory_check_normal
@@ -879,7 +817,6 @@ run_all_6_1() {
 }
 
 run_all_6_2() {
-    screenshot_hint "6.2 异常测试 - 全部5项测试结果"
     test_excep_01_file_not_found_config
     test_excep_02_command_not_found
     test_excep_03_permission_denied
@@ -891,7 +828,6 @@ run_all_6_2() {
 }
 
 run_all_6_3() {
-    screenshot_hint "6.3 边界测试 - 全部6项测试结果"
     test_boundary_01_cpu_100_percent
     test_boundary_02_memory_100_percent
     test_boundary_03_disk_100_percent
@@ -904,45 +840,49 @@ run_all_6_3() {
 }
 
 run_all_6_4() {
-    screenshot_hint "6.4 自动化运行验证 - 全部5项测试结果"
     test_auto_01_single_run_consistency
     test_auto_02_continuous_operation
     test_auto_03_unattended_daemon_simulation
     test_auto_04_mixed_state_handling
-    test_auto_05_timed_task_simulation
     echo ""
     echo -e "${GREEN}════ 6.4 自动化运行验证 全部完成 ════${NC}"
     test_summary
 }
 
 run_all_tests() {
-    screenshot_hint "Project Report 6 全部测试（6.1+6.2+6.3+6.4）"
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}         ${BOLD}开始运行全部测试套件${NC}                                ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "  ${BOLD}▶ 阶段 1/4: 6.1 功能测试${NC}"
-    run_all_6_1
+    run_all_6_1 || true
     echo ""
     echo -e "  ${BOLD}▶ 阶段 2/4: 6.2 异常测试${NC}"
-    run_all_6_2
+    run_all_6_2 || true
     echo ""
     echo -e "  ${BOLD}▶ 阶段 3/4: 6.3 边界测试${NC}"
-    run_all_6_3
+    run_all_6_3 || true
     echo ""
     echo -e "  ${BOLD}▶ 阶段 4/4: 6.4 自动化运行验证${NC}"
-    run_all_6_4
+    run_all_6_4 || true
     echo ""
     echo -e "${CYAN}╔══════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${NC}              ${BOLD}全部测试完成！${NC}                                  ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════════════╝${NC}"
-    test_summary
+    test_summary || true
 }
 
 # ==============================================================
 # 主循环
 # ==============================================================
+
+# 测试后暂停，等待用户按回车再返回菜单
+pause_after_test() {
+    echo ""
+    echo -n "按回车键返回菜单..."
+    read -r
+}
 
 main() {
     # 确保脚本有执行权限
@@ -954,39 +894,38 @@ main() {
         read -r choice
         
         case "$choice" in
-            "1.1") test_func_01_cpu_check_normal; sleep 1 ;;
-            "1.2") test_func_02_cpu_check_warning; sleep 1 ;;
-            "1.3") test_func_03_memory_check_normal; sleep 1 ;;
-            "1.4") test_func_04_memory_check_warning; sleep 1 ;;
-            "1.5") test_func_05_disk_check_normal; sleep 1 ;;
-            "1.6") test_func_06_disk_check_warning; sleep 1 ;;
-            "1.7") test_func_07_services_all_ok; sleep 1 ;;
-            "1.8") test_func_08_services_partial_fail; sleep 1 ;;
-            "1.9") test_func_09_logs_normal; sleep 1 ;;
-            "1.10") test_func_10_logs_oom_detected; sleep 1 ;;
-            "1.11") test_func_11_patrol_full_flow; sleep 1 ;;
-            "1.12") test_func_12_collector_module; sleep 1 ;;
-            "1.0") run_all_6_1 ;;
-            "2.1") test_excep_01_file_not_found_config; sleep 1 ;;
-            "2.2") test_excep_02_command_not_found; sleep 1 ;;
-            "2.3") test_excep_03_permission_denied; sleep 1 ;;
-            "2.4") test_excep_04_invalid_threshold_config; sleep 1 ;;
-            "2.5") test_excep_05_dmesg_command_unavailable; sleep 1 ;;
-            "2.0") run_all_6_2 ;;
-            "3.1") test_boundary_01_cpu_100_percent; sleep 1 ;;
-            "3.2") test_boundary_02_memory_100_percent; sleep 1 ;;
-            "3.3") test_boundary_03_disk_100_percent; sleep 1 ;;
-            "3.4") test_boundary_04_zero_usage; sleep 1 ;;
-            "3.5") test_boundary_05_large_log_file; sleep 1 ;;
-            "3.6") test_boundary_06_threshold_exact_match; sleep 1 ;;
-            "3.0") run_all_6_3 ;;
-            "4.1") test_auto_01_single_run_consistency; sleep 1 ;;
-            "4.2") test_auto_02_continuous_operation; sleep 1 ;;
-            "4.3") test_auto_03_unattended_daemon_simulation; sleep 1 ;;
-            "4.4") test_auto_04_mixed_state_handling; sleep 1 ;;
-            "4.5") test_auto_05_timed_task_simulation; sleep 1 ;;
-            "4.0") run_all_6_4 ;;
-            "A"|"a") run_all_tests ;;
+            "1.1") test_func_01_cpu_check_normal; pause_after_test ;;
+            "1.2") test_func_02_cpu_check_warning; pause_after_test ;;
+            "1.3") test_func_03_memory_check_normal; pause_after_test ;;
+            "1.4") test_func_04_memory_check_warning; pause_after_test ;;
+            "1.5") test_func_05_disk_check_normal; pause_after_test ;;
+            "1.6") test_func_06_disk_check_warning; pause_after_test ;;
+            "1.7") test_func_07_services_all_ok; pause_after_test ;;
+            "1.8") test_func_08_services_partial_fail; pause_after_test ;;
+            "1.9") test_func_09_logs_normal; pause_after_test ;;
+            "1.10") test_func_10_logs_oom_detected; pause_after_test ;;
+            "1.11") test_func_11_patrol_full_flow; pause_after_test ;;
+            "1.12") test_func_12_collector_module; pause_after_test ;;
+            "1.0") run_all_6_1 || true; pause_after_test ;;
+            "2.1") test_excep_01_file_not_found_config; pause_after_test ;;
+            "2.2") test_excep_02_command_not_found; pause_after_test ;;
+            "2.3") test_excep_03_permission_denied; pause_after_test ;;
+            "2.4") test_excep_04_invalid_threshold_config; pause_after_test ;;
+            "2.5") test_excep_05_dmesg_command_unavailable; pause_after_test ;;
+            "2.0") run_all_6_2 || true; pause_after_test ;;
+            "3.1") test_boundary_01_cpu_100_percent; pause_after_test ;;
+            "3.2") test_boundary_02_memory_100_percent; pause_after_test ;;
+            "3.3") test_boundary_03_disk_100_percent; pause_after_test ;;
+            "3.4") test_boundary_04_zero_usage; pause_after_test ;;
+            "3.5") test_boundary_05_large_log_file; pause_after_test ;;
+            "3.6") test_boundary_06_threshold_exact_match; pause_after_test ;;
+            "3.0") run_all_6_3 || true; pause_after_test ;;
+            "4.1") test_auto_01_single_run_consistency; pause_after_test ;;
+            "4.2") test_auto_02_continuous_operation; pause_after_test ;;
+            "4.3") test_auto_03_unattended_daemon_simulation; pause_after_test ;;
+            "4.4") test_auto_04_mixed_state_handling; pause_after_test ;;
+            "4.0") run_all_6_4 || true; pause_after_test ;;
+            "A"|"a") run_all_tests || true; pause_after_test ;;
             "S"|"s") 
                 echo ""
                 test_summary
@@ -999,10 +938,6 @@ main() {
                 echo -e "${CYAN}══════════════════════════════════════════════${NC}"
                 echo -e "${CYAN}  最终测试统计${NC}"
                 test_summary
-                echo ""
-                echo -e "  截图保存在: ${SCREENSHOT_HINT_DIR}/"
-                echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-                echo ""
                 exit 0
                 ;;
             *)

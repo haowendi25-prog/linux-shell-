@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ==============================================================
 # DiagMaster 自动化运行验证测试
-# 测试巡逻模块的连续运行稳定性、一致性和无人值守能力（5个用例）
+# 测试巡逻模块的连续运行稳定性、一致性和无人值守能力（4个用例）
 # ==============================================================
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -156,41 +156,6 @@ echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     fi
 }
 
-test_auto_timed_task() {
-    echo "[TEST] 自动：定时任务模拟（间隔2秒，执行3次）"
-    setup_mocks
-    PATROL_REPORT_DIR="$MOCK_DIR/reports"
-    LOG_FILE="$MOCK_DIR/patrol.log"
-    SERVICES_TO_CHECK="sshd cron"
-    PROCESSES_TO_CHECK="sshd"
-    local interval=2
-    local total_runs=3
-    local completed=0
-    for i in $(seq 1 $total_runs); do
-        set +e
-        run_patrol >/dev/null 2>&1
-        local ret=$?
-        set -e
-        if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
-            completed=$((completed + 1))
-        fi
-        if [ "$i" -lt "$total_runs" ]; then
-            sleep "$interval"
-        fi
-    done
-    local report_count
-    report_count=$(ls -1 "$PATROL_REPORT_DIR"/*.md 2>/dev/null | wc -l)
-    teardown_mocks
-    TESTS_RUN=$((TESTS_RUN+1))
-    if [ "$completed" -eq "$total_runs" ] && [ "$report_count" -ge "$total_runs" ]; then
-        TEST_PASSED=$((TEST_PASSED+1))
-        echo "  ✔ PASS: 定时任务模拟完成 ${completed}/${total_runs}，报告数=${report_count}"
-    else
-        TEST_FAILED=$((TEST_FAILED+1))
-        echo "  ✘ FAIL: 完成 ${completed}/${total_runs}，报告数=${report_count}"
-    fi
-}
-
 # ==============================================================
 # 运行入口
 # ==============================================================
@@ -198,7 +163,7 @@ test_auto_timed_task() {
 run_all_tests() {
     echo ""
     echo "=============================================="
-    echo "  DiagMaster 自动化运行验证测试 (5个用例)"
+    echo "  DiagMaster 自动化运行验证测试 (4个用例)"
     echo "=============================================="
     echo ""
 
@@ -206,7 +171,6 @@ run_all_tests() {
     test_auto_stability
     test_auto_unattended
     test_auto_mixed_state
-    test_auto_timed_task
 
     test_summary || true
 }

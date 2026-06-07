@@ -178,7 +178,7 @@ run_patrol_menu() {
 
 about_project() {
     header
-    echo -e "${YELLOW}--- [模块 6] 关于项目 ---${NC}"
+    echo -e "${YELLOW}--- [模块 7] 关于项目 ---${NC}"
     echo " 团队: 翟浩雯、李薇"
     echo " 技术: Bash, grep/awk/sed, 并发进程, 日志分析,"
     echo "        系统监控, 配置解耦, 自动巡逻"
@@ -214,7 +214,7 @@ main_menu() {
 patrol_daemon_menu() {
     while true; do
         header
-        echo -e "${YELLOW}--- [模块 5b] 后台巡逻守护进程管理 ---${NC}"
+        echo -e "${YELLOW}--- [模块 6] 后台巡逻守护进程管理 ---${NC}"
         echo " 1) 启动后台巡逻守护进程"
         echo " 2) 停止后台巡逻守护进程"
         echo " 3) 查看守护进程状态"
