@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # ==============================================================
-# DiagMaster 自动巡逻模块测试用例（修正版）
+# DiagMaster 巡逻模块单元测试
+# 测试核心 patrol 模块的各个检查函数（共18个测试用例）
 # ==============================================================
 
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,6 +13,9 @@ PROJECT_ROOT="$(cd "$TEST_DIR/.." && pwd)"
 source "$PROJECT_ROOT/lib/utils.sh"
 source "$PROJECT_ROOT/lib/assert.sh"
 
+# 导入共享 Mock 库
+source "$TEST_DIR/lib/mock_utils.sh"
+
 # 设置测试阈值（在导入模块前定义，防止被配置文件覆盖）
 CPU_WARN_THRESHOLD=80
 MEM_WARN_THRESHOLD=85
@@ -19,6 +23,9 @@ DISK_WARN_THRESHOLD=90
 SERVICES_TO_CHECK="sshd cron"
 PROCESSES_TO_CHECK="sshd"
 ENABLE_ALERT=false
+PATROL_REPORT_DIR="/tmp/test_patrol_reports"
+LOG_FILE="/tmp/test_patrol.log"
+mkdir -p "$PATROL_REPORT_DIR" "$(dirname "$LOG_FILE")"
 
 # 导入待测模块
 source "$PROJECT_ROOT/modules/patrol.sh"
@@ -31,91 +38,9 @@ SERVICES_TO_CHECK="sshd cron"
 PROCESSES_TO_CHECK="sshd"
 ENABLE_ALERT=false
 
-# ---------- Mock 管理 ----------
-MOCK_DIR=""
-ORIGINAL_PATH="$PATH"
-
-setup_mocks() {
-    MOCK_DIR=$(mktemp -d)
-    if [ ! -d "$MOCK_DIR" ]; then
-        echo "FATAL: 无法创建临时 Mock 目录" >&2
-        exit 1
-    fi
-
-    # mock top（CPU 15%）
-    cat > "$MOCK_DIR/top" << 'EOF'
-#!/bin/bash
-echo "Cpu(s): 10.0 us, 5.0 sy, 0.0 ni, 80.0 id, 5.0 wa, 0.0 hi, 0.0 si, 0.0 st"
-EOF
-    chmod +x "$MOCK_DIR/top"
-
-    # mock free（内存 10%）
-    cat > "$MOCK_DIR/free" << 'EOF'
-#!/bin/bash
-echo "             total        used        free      shared  buff/cache   available"
-echo "Mem:           1000         100         900           0           0         900"
-EOF
-    chmod +x "$MOCK_DIR/free"
-
-    # mock df（磁盘 85%）
-    cat > "$MOCK_DIR/df" << 'EOF'
-#!/bin/bash
-echo "Filesystem     1K-blocks    Used Available Use% Mounted on"
-echo "/dev/sda1       10000000 8500000   1500000  85% /"
-EOF
-    chmod +x "$MOCK_DIR/df"
-
-    # mock systemctl
-    cat > "$MOCK_DIR/systemctl" << 'EOF'
-#!/bin/bash
-case "$*" in
-    *"sshd"*) exit 0 ;;
-    *"cron"*)  exit 0 ;;
-    *"nginx"*) exit 1 ;;
-    *)         exit 1 ;;
-esac
-EOF
-    chmod +x "$MOCK_DIR/systemctl"
-
-    # mock pgrep（取最后一个参数作为进程名）
-    cat > "$MOCK_DIR/pgrep" << 'EOF'
-#!/bin/bash
-proc="${@: -1}"
-case "$proc" in
-    "sshd")  exit 0 ;;
-    "nginx") exit 1 ;;
-    "cron")  exit 0 ;;
-    *)       exit 0 ;;
-esac
-EOF
-    chmod +x "$MOCK_DIR/pgrep"
-
-    # mock dmesg（无 OOM）
-    cat > "$MOCK_DIR/dmesg" << 'EOF'
-#!/bin/bash
-echo "Some kernel messages"
-EOF
-    chmod +x "$MOCK_DIR/dmesg"
-
-    export PATH="$MOCK_DIR:$ORIGINAL_PATH"
-}
-
-overwrite_mock() {
-    local name="$1" content="$2"
-    printf '%s\n' "$content" > "$MOCK_DIR/$name"
-    chmod +x "$MOCK_DIR/$name"
-}
-
-teardown_mocks() {
-    export PATH="$ORIGINAL_PATH"
-    if [ -n "$MOCK_DIR" ] && [ -d "$MOCK_DIR" ]; then
-        rm -rf "$MOCK_DIR"
-    fi
-    MOCK_DIR=""
-}
-
-
-# ---------- 单元测试 ----------
+# ==============================================================
+# 第一部分：功能单元测试（12个）
+# ==============================================================
 
 test_cpu_normal() {
     echo "[TEST] CPU 正常场景"
@@ -129,7 +54,6 @@ test_cpu_normal() {
 test_cpu_high() {
     echo "[TEST] CPU 高负载场景"
     setup_mocks
-    # 覆盖 top 为 95%
     overwrite_mock "top" '#!/bin/bash
 echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     local ret
@@ -241,7 +165,9 @@ echo "Out of memory: Kill process"'
     teardown_mocks
 }
 
-# ---------- 集成测试 ----------
+# ==============================================================
+# 第二部分：集成测试（2个）
+# ==============================================================
 
 test_patrol_all_ok() {
     echo "[TEST] 集成：全部正常"
@@ -287,12 +213,14 @@ echo "Cpu(s): 50.0 us, 45.0 sy, 0.0 ni, 5.0 id, 0.0 wa, 0.0 hi, 0.0 si, 0.0 st"'
     teardown_mocks
 }
 
-# ---------- 异常测试 ----------
+# ==============================================================
+# 第三部分：异常/降级测试（4个）
+# ==============================================================
 
 test_cpu_no_top_no_proc() {
     echo "[TEST] 异常：top 不可用时的降级处理"
     setup_mocks
-    rm -f "$MOCK_DIR/top"
+    remove_mock "top"
     local ret
     set +e
     ret=$(check_cpu 2>/dev/null) || ret="2"
@@ -306,7 +234,7 @@ test_cpu_no_top_no_proc() {
 test_disk_no_df() {
     echo "[TEST] 异常：df 命令不可用时的降级处理"
     setup_mocks
-    rm -f "$MOCK_DIR/df"
+    remove_mock "df"
     local ret
     set +e
     ret=$(check_disk 2>/dev/null) || ret="2"
@@ -320,7 +248,7 @@ test_disk_no_df() {
 test_services_no_systemctl() {
     echo "[TEST] 异常：systemctl 不可用（降级为 pgrep）"
     setup_mocks
-    rm -f "$MOCK_DIR/systemctl"
+    remove_mock "systemctl"
     SERVICES_TO_CHECK="sshd cron"
     local ret
     set +e
@@ -355,15 +283,18 @@ test_config_missing() {
     teardown_mocks
 }
 
-# ---------- 运行入口 ----------
+# ==============================================================
+# 运行入口
+# ==============================================================
 
 run_all_tests() {
     echo ""
     echo "=============================================="
-    echo "  DiagMaster 自动巡逻模块 - 单元/集成测试"
+    echo "  DiagMaster 巡逻模块 - 单元/集成测试 (18例)"
     echo "=============================================="
     echo ""
 
+    # 功能单元测试
     test_cpu_normal
     test_cpu_high
     test_memory_normal
@@ -376,8 +307,12 @@ run_all_tests() {
     test_processes_missing
     test_logs_normal
     test_logs_oom
+
+    # 集成测试
     test_patrol_all_ok
     test_patrol_with_failures
+
+    # 异常测试
     test_cpu_no_top_no_proc
     test_disk_no_df
     test_services_no_systemctl
