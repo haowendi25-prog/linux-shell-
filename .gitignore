@@ -1,0 +1,9 @@
+# DiagMaster 运行时生成文件（不要提交）
+diagmaster/data/*.tmp
+diagmaster/data/audit_history/
+diagmaster/data/history/
+diagmaster/data/patrol_daemon.pid
+diagmaster/data/temp_node
+diagmaster/logs/*
+diagmaster/reports/*
+diagmaster/config/diag.conf

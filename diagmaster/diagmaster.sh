@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # 项目根目录
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,61 +59,499 @@ node_management() {
     while true; do
         header
         echo -e "${YELLOW}--- [模块 1] 受控服务器节点资产管理 ---${NC}"
-        echo " 1) 查看当前受控节点列表"
+        echo " 1) 查看受控节点列表（含状态）"
         echo " 2) 新增受控服务器节点"
         echo " 3) 删除失效服务器节点"
-        echo " 4) 返回主菜单"
-        read -p "请输入子菜单指令 (1-4): " nc
+        echo " 4) 测试节点连接"
+        echo " 5) 查看节点详细信息"
+        echo " 6) 返回主菜单"
+        read -p "请输入子菜单指令 (1-6): " nc
+
         case "$nc" in
-            1)
-                header
-                printf "%-5s | %-20s\n" "ID" "NODE_IP_OR_NAME"
-                echo "-----------------------------------"
-                nl -w2 -s'   | ' "$NODE_DB"
-                read -p "按回车键继续..." _
-                ;;
-            2)
-                read -p "请输入要添加的服务器IP/名称: " ip
-                if [ -n "$ip" ]; then
-                    echo "$ip" >> "$NODE_DB"
-                    log_action "新增受控节点: $ip"
-                    echo -e "${GREEN}✓ 节点添加成功。${NC}"
-                fi
+            1) show_nodes_with_status ;;
+            2) add_new_node ;;
+            3) delete_node ;;
+            4) test_node_connection ;;
+            5) show_node_details ;;
+            6) return ;;
+            *)
+                echo -e "${RED}❌ 无效指令${NC}"
                 sleep 1
                 ;;
-            3)
-                read -p "请输入要删除的节点关键字: " kw
-                if [ -n "$kw" ]; then
-                    grep -v "$kw" "$NODE_DB" > "$ROOT_DIR/data/temp_node" && mv "$ROOT_DIR/data/temp_node" "$NODE_DB"
-                    log_action "删除了节点关键字: $kw"
-                    echo -e "${YELLOW}✓ 相关节点已移除。${NC}"
-                fi
-                sleep 1
-                ;;
-            4) return ;;
         esac
     done
+}
+
+show_nodes_with_status() {
+    header
+    echo -e "${YELLOW}--- 受控服务器节点列表 ---${NC}"
+    echo ""
+
+    if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
+        echo -e "${YELLOW}暂无受控节点，请先添加节点${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    printf "%-3s | %-25s | %-10s | %-15s\n" "ID" "节点" "状态" "DiagMaster"
+    echo "------|--------------------------|------------|----------------"
+
+    local i=1
+    local total=0
+    local online=0
+    local installed=0
+
+    while IFS= read -r node; do
+        if [ -z "$node" ]; then
+            continue
+        fi
+
+        total=$((total + 1))
+
+        if [ "$node" = "localhost" ]; then
+            status="${GREEN}本机${NC}"
+            online=$((online + 1))
+            installed=$((installed + 1))
+            printf "%-3s | %-25s | %-10s | %-15s\n" "$i" "$node" "$status" "已安装"
+        else
+            if test_ssh_connection "$node" 3; then
+                status="${GREEN}在线${NC}"
+                online=$((online + 1))
+
+                if verify_diagmaster_on_node "$node" 2>/dev/null; then
+                    installed=$((installed + 1))
+                    printf "%-3s | %-25s | %-10s | %-15s\n" "$i" "$node" "$status" "已安装"
+                else
+                    printf "%-3s | %-25s | %-10s | %-15s\n" "$i" "$node" "$status" "未安装"
+                fi
+            else
+                status="${RED}离线${NC}"
+                printf "%-3s | %-25s | %-10s | %-15s\n" "$i" "$node" "$status" "-"
+            fi
+        fi
+
+        i=$((i + 1))
+    done < "$NODE_DB"
+
+    echo ""
+    echo "统计: 总计 $total 个节点 | 在线 $online 个 | 已安装 DiagMaster $installed 个"
+    echo ""
+
+    read -p "按回车键返回..." _
+}
+
+add_new_node() {
+    header
+    echo -e "${YELLOW}--- 添加受控服务器节点 ---${NC}"
+    echo ""
+
+    read -p "请输入节点地址 (IP 或域名，或输入 'localhost'): " node_addr
+
+    if [ -z "$node_addr" ]; then
+        echo -e "${RED}❌ 节点地址不能为空${NC}"
+        sleep 1
+        return 1
+    fi
+
+    if grep -q "^${node_addr}$" "$NODE_DB" 2>/dev/null; then
+        echo -e "${YELLOW}⚠️  该节点已存在${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    if [ "$node_addr" != "localhost" ]; then
+        echo ""
+        echo "正在测试连接到 $node_addr ..."
+
+        if ! test_ssh_connection "$node_addr" 10; then
+            echo -e "${RED}❌ 无法连接到 $node_addr (SSH 22 端口)${NC}"
+            echo ""
+            echo "可能的原因："
+            echo "  1. 节点地址或 IP 错误"
+            echo "  2. 节点不在线"
+            echo "  3. 防火墙阻止了 SSH 端口"
+            echo "  4. SSH 服务未运行"
+            echo ""
+            read -p "是否仍然添加此节点? (y/n): " confirm
+            if [ "$confirm" != "y" ]; then
+                return 1
+            fi
+        else
+            echo -e "${GREEN}✅ 连接测试成功${NC}"
+
+            echo ""
+            echo "正在检查节点是否已安装 DiagMaster..."
+
+            if verify_diagmaster_on_node "$node_addr" 2>/dev/null; then
+                echo -e "${GREEN}✅ 节点已安装 DiagMaster${NC}"
+            else
+                echo -e "${YELLOW}⚠️  节点未安装 DiagMaster${NC}"
+                echo ""
+                echo "要使用分布式功能，需要在远程节点安装 DiagMaster"
+                echo "安装步骤："
+                echo "  1. 在远程节点执行: cd /opt && git clone <repo>"
+                echo "  2. 或手工上传整个 diagmaster 目录到 /opt/"
+                read -p "是否仍然添加此节点? (y/n): " confirm
+                if [ "$confirm" != "y" ]; then
+                    return 1
+                fi
+            fi
+        fi
+    fi
+
+    echo "$node_addr" >> "$NODE_DB"
+
+    echo ""
+    echo -e "${GREEN}✅ 节点已成功添加: $node_addr${NC}"
+    log_action "新增受控节点: $node_addr"
+
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local node_info="${timestamp} | 节点: $node_addr | 状态: 已添加"
+    echo "$node_info" >> "$ROOT_DIR/logs/nodes_history.log" 2>/dev/null || true
+
+    read -p "按回车键返回..." _
+}
+
+delete_node() {
+    header
+    echo -e "${YELLOW}--- 删除受控服务器节点 ---${NC}"
+    echo ""
+
+    if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
+        echo -e "${YELLOW}暂无受控节点${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    echo "当前受控节点:"
+    nl "$NODE_DB"
+    echo ""
+
+    read -p "请输入要删除的节点编号 (或输入节点关键字): " choice
+
+    local node_to_delete=""
+
+    if [ "$choice" -ge 1 ] 2>/dev/null; then
+        node_to_delete=$(sed -n "${choice}p" "$NODE_DB")
+    else
+        node_to_delete="$choice"
+    fi
+
+    if [ -z "$node_to_delete" ]; then
+        echo -e "${RED}❌ 无效的选择${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    echo ""
+    echo -e "${YELLOW}确认删除节点: $node_to_delete ? (y/n)${NC}"
+    read -p "请确认: " confirm
+
+    if [ "$confirm" != "y" ]; then
+        echo "操作已取消"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    grep -Fxv "$node_to_delete" "$NODE_DB" > "$ROOT_DIR/data/temp_node" 2>/dev/null && \
+    mv "$ROOT_DIR/data/temp_node" "$NODE_DB"
+
+    echo -e "${GREEN}✅ 节点已成功删除: $node_to_delete${NC}"
+    log_action "删除了受控节点: $node_to_delete"
+
+    read -p "按回车键返回..." _
+}
+
+test_node_connection() {
+    header
+    echo -e "${YELLOW}--- 测试节点连接 ---${NC}"
+    echo ""
+
+    if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
+        echo -e "${YELLOW}暂无受控节点${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    echo "当前受控节点:"
+    nl "$NODE_DB"
+    echo ""
+
+    read -p "请输入要测试的节点编号: " choice
+
+    if [ "$choice" -lt 1 ] 2>/dev/null; then
+        echo -e "${RED}❌ 无效的编号${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    local node
+    node=$(sed -n "${choice}p" "$NODE_DB")
+
+    if [ -z "$node" ]; then
+        echo -e "${RED}❌ 找不到该节点${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    echo ""
+    echo "正在测试节点: $node ..."
+    echo ""
+
+    if [ "$node" = "localhost" ]; then
+        echo -e "${GREEN}✅ 本机在线${NC}"
+        read -p "按回车键返回..." _
+        return 0
+    fi
+
+    echo -n "1. 测试 SSH 连接... "
+    if test_ssh_connection "$node" 10; then
+        echo -e "${GREEN}✅ 成功${NC}"
+    else
+        echo -e "${RED}❌ 失败${NC}"
+        echo "   无法连接到 $node:22，请检查网络和防火墙"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    echo -n "2. 测试 SSH 密钥认证... "
+    if test_ssh_key_auth "$node"; then
+        echo -e "${GREEN}✅ 成功（无需密码）${NC}"
+    else
+        echo -e "${YELLOW}⚠️  需要密码登录${NC}"
+        echo "   建议配置 SSH 公钥认证以支持分布式功能"
+    fi
+
+    echo -n "3. 检查 DiagMaster 安装... "
+    if verify_diagmaster_on_node "$node"; then
+        echo -e "${GREEN}✅ 已安装${NC}"
+    else
+        echo -e "${RED}❌ 未安装${NC}"
+        echo "   需要在远程节点安装 DiagMaster 才能使用分布式功能"
+    fi
+
+    echo -n "4. 测试远程命令执行... "
+    if execute_on_node "$node" "echo 'test' > /tmp/diagmaster_test.txt && [ -f /tmp/diagmaster_test.txt ] && rm /tmp/diagmaster_test.txt" 2>/dev/null; then
+        echo -e "${GREEN}✅ 成功${NC}"
+    else
+        echo -e "${YELLOW}⚠️  失败${NC}"
+        echo "   可能没有写入权限"
+    fi
+
+    echo ""
+    echo -e "${GREEN}✅ 节点 $node 测试完成${NC}"
+
+    read -p "按回车键返回..." _
+}
+
+show_node_details() {
+    header
+    echo -e "${YELLOW}--- 节点详细信息 ---${NC}"
+    echo ""
+
+    if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
+        echo -e "${YELLOW}暂无受控节点${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    echo "当前受控节点:"
+    nl "$NODE_DB"
+    echo ""
+
+    read -p "请输入要查看详细信息的节点编号: " choice
+
+    if [ "$choice" -lt 1 ] 2>/dev/null; then
+        echo -e "${RED}❌ 无效的编号${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    local node
+    node=$(sed -n "${choice}p" "$NODE_DB")
+
+    if [ -z "$node" ]; then
+        echo -e "${RED}❌ 找不到该节点${NC}"
+        read -p "按回车键返回..." _
+        return 1
+    fi
+
+    echo ""
+    echo "节点 $node 的详细信息:"
+    echo "================================"
+
+    if [ "$node" = "localhost" ]; then
+        echo ""
+        echo "主机名: $(hostname)"
+        echo "操作系统: $(uname -s)"
+        echo "内核版本: $(uname -r)"
+        echo "架构: $(uname -m)"
+        echo "CPU 核心数: $(nproc)"
+        echo "内存大小: $(free -h | awk '/^Mem:/ {print $2}')"
+        echo "磁盘使用: $(df -h / | awk 'NR==2 {print $3 " / " $2 " (" $5 ")"}')"
+        echo "当前用户: $(whoami)"
+        echo "SSH 服务: $(systemctl is-active ssh 2>/dev/null || echo '未知')"
+        echo ""
+    else
+        echo ""
+        echo "正在获取远程信息..."
+
+        local remote_info
+        remote_info=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
+            "echo '主机名: '$(hostname); \
+             echo '操作系统: '$(uname -s); \
+             echo '内核版本: '$(uname -r); \
+             echo '架构: '$(uname -m); \
+             echo 'CPU 核心数: '$(nproc); \
+             echo '内存大小: '$(free -h 2>/dev/null | awk '/^Mem:/ {print \$2}'); \
+             echo '磁盘使用: '$(df -h / 2>/dev/null | awk 'NR==2 {print \$3 \" / \" \$2 \" (\" \$5 \")\"}'); \
+             echo '当前用户: '$(whoami); \
+             echo 'SSH 服务: '$(systemctl is-active ssh 2>/dev/null || echo '未知')" 2>/dev/null)
+
+        if [ -n "$remote_info" ]; then
+            echo "$remote_info"
+        else
+            echo -e "${RED}❌ 无法获取远程信息${NC}"
+        fi
+    fi
+
+    echo "================================"
+    echo ""
+
+    read -p "按回车键返回..." _
 }
 
 run_collector() {
     header
     echo -e "${YELLOW}--- [模块 2] 多进程性能指标并行监控 ---${NC}"
-    if [ -f "$ROOT_DIR/modules/collector.sh" ]; then
-        bash "$ROOT_DIR/modules/collector.sh"
-    else
-        echo "collector.sh 不存在，直接内联采集"
-        DATA_DIR="$ROOT_DIR/data"
-        mkdir -p "$DATA_DIR"
-        ( top -bn1 | grep "Cpu(s)" | awk '{print $2+$4}' > "$DATA_DIR/cpu.tmp" ) &
-        ( free -m | awk '/Mem:/ {print $3/$2*100}' > "$DATA_DIR/mem.tmp" ) &
-        ( df -h / | awk 'NR==2 {print $5}' | sed 's/%//' > "$DATA_DIR/disk.tmp" ) &
-        wait
+    echo ""
+
+    if ! command_exists collect_cpu 2>/dev/null; then
+        [ -f "$ROOT_DIR/modules/collector.sh" ] && source "$ROOT_DIR/modules/collector.sh" 2>/dev/null || true
     fi
-    local cpu_val; cpu_val=$(cat "$ROOT_DIR/data/cpu.tmp" 2>/dev/null || echo "0")
-    local mem_val; mem_val=$(cat "$ROOT_DIR/data/mem.tmp" 2>/dev/null || echo "0")
-    local disk_val; disk_val=$(cat "$ROOT_DIR/data/disk.tmp" 2>/dev/null || echo "0")
-    echo " CPU: ${cpu_val}%  | 内存: ${mem_val}%  | 磁盘: ${disk_val}%"
-    log_action "执行多进程性能指标采集"
+
+    local nodes=("localhost")
+    local online_nodes=("localhost")
+    local offline_nodes=()
+
+    if [ -f "$NODE_DB" ] && [ -s "$NODE_DB" ]; then
+        while IFS= read -r node; do
+            [ -z "$node" ] && continue
+            [ "$node" = "localhost" ] && continue
+            nodes+=("$node")
+            if test_ssh_connection "$node" 3; then
+                online_nodes+=("$node")
+            else
+                offline_nodes+=("$node")
+            fi
+        done < "$NODE_DB"
+    fi
+
+    if [ ${#online_nodes[@]} -eq 0 ]; then
+        echo -e "${YELLOW}⚠️  暂无在线节点可采集${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    echo "待采集节点 (${#online_nodes[@]} 在线 / ${#offline_nodes[@]} 离线):"
+    for node in "${online_nodes[@]}"; do
+        echo -e "  ${GREEN}●${NC} $node"
+    done
+    for node in "${offline_nodes[@]}"; do
+        echo -e "  ${RED}○${NC} $node (跳过)"
+    done
+    echo ""
+
+    local tmp_dir="$ROOT_DIR/data/collect_$$"
+    mkdir -p "$tmp_dir"
+    local pids=()
+
+    for node in "${online_nodes[@]}"; do
+        local safe_name
+        safe_name=$(echo "$node" | tr '/' '_' | tr ':' '_')
+        collect_remote "$node" > "$tmp_dir/${safe_name}.out" 2>/dev/null &
+        pids+=($!)
+    done
+
+    local any_fail=0
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+
+    echo "========================================"
+    echo "  采集结果汇总"
+    echo "========================================"
+
+    for node in "${online_nodes[@]}"; do
+        local safe_name
+        safe_name=$(echo "$node" | tr '/' '_' | tr ':' '_')
+        local node_file="$tmp_dir/${safe_name}.out"
+
+        if [ ! -f "$node_file" ] || [ ! -s "$node_file" ]; then
+            echo ""
+            echo -e "[${YELLOW}${node}${NC}] 采集失败"
+            any_fail=1
+            continue
+        fi
+
+        local content
+        content=$(cat "$node_file")
+
+        if [ "$content" = "NODE_OFFLINE" ]; then
+            echo ""
+            echo -e "[${YELLOW}${node}${NC}] ${RED}离线${NC}"
+            any_fail=1
+            continue
+        fi
+
+        local cpu_val mem_val disk_val load_val proc_val
+        cpu_val=$(echo "$content" | grep '^CPU=' | head -1 | cut -d'=' -f2)
+        mem_val=$(echo "$content" | grep '^MEM=' | head -1 | cut -d'=' -f2)
+        disk_val=$(echo "$content" | grep '^DISK=' | head -1 | cut -d'=' -f2)
+        load_val=$(echo "$content" | grep '^LOAD=' | head -1 | cut -d'=' -f2)
+        proc_val=$(echo "$content" | grep '^PROC=' | head -1 | cut -d'=' -f2)
+
+        cpu_val=${cpu_val:-0}
+        mem_val=${mem_val:-0}
+        disk_val=${disk_val:-0}
+        load_val=${load_val:-N/A}
+        proc_val=${proc_val:-0}
+
+        echo ""
+        echo -e "[${CYAN}${node}${NC}]"
+        echo "  CPU: $(colored_status "$cpu_val" "$CPU_WARN_THRESHOLD")"
+        echo "  内存: $(colored_status "$mem_val" "$MEM_WARN_THRESHOLD")"
+        echo "  磁盘: $(colored_status "$disk_val" "$DISK_WARN_THRESHOLD")"
+        echo "  负载: $load_val"
+        echo "  进程: $proc_val"
+
+        if [ "$(check_threshold "cpu" "$cpu_val" "$CPU_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ CPU 过高${NC}"
+            any_fail=1
+        fi
+        if [ "$(check_threshold "mem" "$mem_val" "$MEM_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ 内存过高${NC}"
+            any_fail=1
+        fi
+        if [ "$(check_threshold "disk" "$disk_val" "$DISK_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ 磁盘过高${NC}"
+            any_fail=1
+        fi
+    done
+
+    echo ""
+    echo "========================================"
+
+    if [ "$any_fail" -eq 0 ]; then
+        echo -e "${GREEN}✓ 全部节点指标正常${NC}"
+    else
+        echo -e "${RED}⚠ 部分节点存在告警${NC}"
+    fi
+    echo "========================================"
+
+    rm -rf "$tmp_dir"
+    log_action "执行多节点性能采集 (共 ${#nodes[@]} 个节点)"
     read -p "按回车键返回..." _
 }
 
@@ -145,28 +583,309 @@ EOF
 
 disk_cleanup() {
     header
-    echo -e "${YELLOW}--- [模块 4] 磁盘临时文件清理 ---${NC}"
-    read -p "确认清理 /tmp 下临时文件? (y/n): " c
-    if [[ "$c" == "y" ]]; then
-        rm -rf /tmp/* 2>/dev/null || true
-        echo -e "${GREEN}✓ 清理完成。${NC}"
-        log_action "执行磁盘清理"
-    else
-        echo "操作已取消。"
+    echo -e "${YELLOW}--- [模块 4] 磁盘智能清理与自愈 ---${NC}"
+    echo ""
+
+    local total_freed=0
+    local cleanup_report="$ROOT_DIR/reports/disk_cleanup_$(date +%Y%m%d_%H%M%S).log"
+    mkdir -p "$ROOT_DIR/reports"
+    echo "DiagMaster 磁盘清理报告 - $(date '+%Y-%m-%d %H:%M:%S')" > "$cleanup_report"
+    echo "========================================" >> "$cleanup_report"
+
+    # ---------- 1. 扫描垃圾源 ----------
+    echo -e "  ${YELLOW}[扫描]${NC} 正在分析磁盘垃圾源..."
+    echo ""
+
+    declare -a scan_items=()
+    declare -a scan_sizes=()
+    declare -a scan_actions=()
+    declare -a scan_risks=()
+    local idx=0
+
+    # /tmp 过期文件（仅1天前的）
+    local tmp_size
+    tmp_size=$(du -sm /tmp 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+    [ -z "$tmp_size" ] && tmp_size=0
+    if [ "${tmp_size:-0}" -gt 0 ]; then
+        scan_items+=("系统临时文件 /tmp（1天前）")
+        scan_sizes+=("${tmp_size}")
+        scan_actions+=("tmp")
+        scan_risks+=("1")
+        idx=$((idx + 1))
     fi
-    read -p "按回车键返回..." _
+
+    # 用户缓存
+    local cache_size
+    cache_size=$(du -sm "$HOME/.cache" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+    [ -z "$cache_size" ] && cache_size=0
+    if [ "${cache_size:-0}" -gt 0 ]; then
+        scan_items+=("用户缓存 ~/.cache")
+        scan_sizes+=("${cache_size}")
+        scan_actions+=("cache")
+        scan_risks+=("1")
+        idx=$((idx + 1))
+    fi
+
+    # 回收站
+    local trash_size=0
+    [ -d "$HOME/.local/share/Trash" ] && trash_size=$(du -sm "$HOME/.local/share/Trash" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+    if [ "${trash_size:-0}" -gt 0 ]; then
+        scan_items+=("回收站 Trash")
+        scan_sizes+=("${trash_size}")
+        scan_actions+=("trash")
+        scan_risks+=("1")
+        idx=$((idx + 1))
+    fi
+
+    # apt 缓存
+    local apt_size=0
+    if [ -d /var/cache/apt/archives ]; then
+        apt_size=$(du -sm /var/cache/apt/archives 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+        [ -z "$apt_size" ] && apt_size=0
+    fi
+    if [ "${apt_size:-0}" -gt 0 ]; then
+        scan_items+=("apt 包缓存")
+        scan_sizes+=("${apt_size}")
+        scan_actions+=("apt")
+        scan_risks+=("2")
+        idx=$((idx + 1))
+    fi
+
+    # journal 日志（7天前）
+    local journal_size=0
+    if command -v journalctl &>/dev/null; then
+        journal_size=$(journalctl --disk-usage 2>/dev/null | tr -d '\n' | grep -oE '[0-9.]+[KMGT]?B' | head -1 || echo "")
+        if [ -n "$journal_size" ]; then
+            journal_size=$(echo "$journal_size" | grep -oE '[0-9.]+' || echo "0")
+        fi
+    fi
+    if [ "${journal_size:-0}" -gt 0 ] 2>/dev/null; then
+        scan_items+=("journal 日志（7天前）")
+        scan_sizes+=("${journal_size}")
+        scan_actions+=("journal")
+        scan_risks+=("2")
+        idx=$((idx + 1))
+    fi
+
+    # 旧内核（保留最近2个）
+    local old_kernels=0
+    if [ -d /boot ] && command -v dpkg &>/dev/null; then
+        old_kernels=$(dpkg --list 2>/dev/null | grep -E "linux-image-[0-9]+|linux-headers-[0-9]+" | grep -v "$(uname -r)" | wc -l | tr -d '[:space:]' || echo "0")
+        [ -z "$old_kernels" ] && old_kernels=0
+    fi
+    if [ "${old_kernels:-0}" -gt 0 ]; then
+        scan_items+=("旧内核 (保留最近2个)")
+        scan_sizes+=("0")
+        scan_actions+=("oldkernel")
+        scan_risks+=("3")
+        idx=$((idx + 1))
+    fi
+
+    # Docker 悬空镜像
+    local docker_size=0
+    if command -v docker &>/dev/null && docker info &>/dev/null; then
+        docker_size=$(docker system df 2>/dev/null | grep -i "reclaimable" | grep -oE '[0-9.]+' | head -1 || echo "0")
+        docker_size=${docker_size%.*}
+        [ -z "$docker_size" ] && docker_size=0
+    fi
+    if [ "${docker_size:-0}" -gt 0 ] 2>/dev/null; then
+        scan_items+=("Docker 悬空镜像/缓存")
+        scan_sizes+=("${docker_size}")
+        scan_actions+=("docker")
+        scan_risks+=("3")
+        idx=$((idx + 1))
+    fi
+
+    # 显示扫描结果
+    if [ $idx -eq 0 ]; then
+        echo -e "  ${GREEN}✓ 磁盘空间充裕，未发现明显垃圾。${NC}"
+        read -p "  按回车键返回..." _
+        return
+    fi
+
+    printf "  ${CYAN}%-3s | %-30s | %-10s | %-6s${NC}\n" "#" "类别" "大小(MB)" "风险"
+    echo "  -------------------------------------------------------------"
+    local i
+    for i in $(seq 0 $((idx - 1))); do
+        local risk_text="低"
+        [ "${scan_risks[$i]}" -eq 2 ] && risk_text="中"
+
+        local risk_color="${GREEN}"
+        [ "${scan_risks[$i]}" -eq 2 ] && risk_color="${YELLOW}"
+
+        printf "  %-3s | %-30s | %-10s | " "$((i + 1))" "${scan_items[$i]}" "${scan_sizes[$i]} MB"
+        printf "%b\n" "${risk_color}${risk_text}${NC}"
+    done
+    echo ""
+
+    # ---------- 2. 用户选择清理项 ----------
+    echo "  提示: 直接回车 = 仅清理低风险项 | 空格分隔多个编号如: 1 3 | 0 = 取消"
+    echo "  输入要清理的编号:"
+    read -p "  选择: " choices
+
+    local -a selected=()
+    if [ -z "$choices" ]; then
+        # 默认只选低风险项（风险=1）
+        for i in $(seq 0 $((idx - 1))); do
+            if [ "${scan_risks[$i]}" -eq 1 ]; then
+                selected+=("$i")
+            fi
+        done
+    elif [ "$choices" = "0" ]; then
+        echo "  已取消。"
+        read -p "  按回车键返回..." _
+        return
+    else
+        for c in $choices; do
+            local ci=$((c - 1))
+            if [ "$ci" -ge 0 ] && [ "$ci" -lt "$idx" ]; then
+                selected+=("$ci")
+            fi
+        done
+    fi
+
+    if [ ${#selected[@]} -eq 0 ]; then
+        echo "  未选择任何项，已取消。"
+        read -p "  按回车键返回..." _
+        return
+    fi
+
+    # ---------- 3. 执行清理 ----------
+    echo ""
+    echo -e "  ${YELLOW}[清理]${NC} 开始执行..."
+    echo ""
+
+    local sel
+    for sel in "${selected[@]}"; do
+        local action="${scan_actions[$sel]}"
+        local size="${scan_sizes[$sel]}"
+        local label="${scan_items[$sel]}"
+        echo -e "  ${CYAN}▸${NC} 清理 ${label} ..."
+
+        case "$action" in
+            tmp)
+                local before
+                before=$(du -sm /tmp 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$before" ] && before=0
+                find /tmp -type f -atime +1 -delete 2>/dev/null || true
+                find /tmp -type d -empty -delete 2>/dev/null || true
+                local after
+                after=$(du -sm /tmp 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$after" ] && after=0
+                local freed=$((before - after))
+                [ "$freed" -lt 0 ] && freed=0
+                total_freed=$((total_freed + freed))
+                echo -e "       ${GREEN}✓${NC} 已清理 ${freed} MB"
+                echo "  /tmp 清理: 清理前 ${before} MB, 清理后 ${after} MB, 释放 ${freed} MB" >> "$cleanup_report"
+                ;;
+            cache)
+                local before
+                before=$(du -sm "$HOME/.cache" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$before" ] && before=0
+                find "$HOME/.cache" -type f -delete 2>/dev/null || true
+                find "$HOME/.cache" -type d -empty -delete 2>/dev/null || true
+                local after
+                after=$(du -sm "$HOME/.cache" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$after" ] && after=0
+                local freed=$((before - after))
+                [ "$freed" -lt 0 ] && freed=0
+                total_freed=$((total_freed + freed))
+                echo -e "       ${GREEN}✓${NC} 已清理 ${freed} MB"
+                echo "  缓存清理: 清理前 ${before} MB, 清理后 ${after} MB, 释放 ${freed} MB" >> "$cleanup_report"
+                ;;
+            trash)
+                local before
+                before=$(du -sm "$HOME/.local/share/Trash" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$before" ] && before=0
+                rm -rf "$HOME/.local/share/Trash/"* 2>/dev/null || true
+                local after
+                after=$(du -sm "$HOME/.local/share/Trash" 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                [ -z "$after" ] && after=0
+                local freed=$((before - after))
+                [ "$freed" -lt 0 ] && freed=0
+                total_freed=$((total_freed + freed))
+                echo -e "       ${GREEN}✓${NC} 已清理 ${freed} MB"
+                echo "  回收站清理: 清理前 ${before} MB, 清理后 ${after} MB, 释放 ${freed} MB" >> "$cleanup_report"
+                ;;
+            apt)
+                if command -v apt-get &>/dev/null; then
+                    apt-get clean 2>/dev/null || true
+                    local freed
+                    freed=$(du -sm /var/cache/apt/archives 2>/dev/null | awk '{print $1}' | head -1 | tr -d '[:space:]')
+                    [ -z "$freed" ] && freed=0
+                    total_freed=$((total_freed + freed))
+                    echo -e "       ${GREEN}✓${NC} apt 缓存已清理 (约 ${freed} MB)"
+                    echo "  apt 缓存清理: 释放约 ${freed} MB" >> "$cleanup_report"
+                else
+                    echo -e "       ${YELLOW}⚠${NC} 当前环境无 apt，跳过"
+                fi
+                ;;
+            journal)
+                if command -v journalctl &>/dev/null; then
+                    journalctl --vacuum-time=7d 2>/dev/null || true
+                    echo -e "       ${GREEN}✓${NC} 已清理 7 天前的 journal 日志"
+                    echo "  journal 日志清理: 已清理7天前日志" >> "$cleanup_report"
+                else
+                    echo -e "       ${YELLOW}⚠${NC} 当前环境无 journalctl，跳过"
+                fi
+                ;;
+            oldkernel)
+                if command -v dpkg &>/dev/null; then
+                    echo -e "       ${YELLOW}⚠${NC} 旧内核清理需手动执行，建议: sudo apt autoremove"
+                    echo "  旧内核: 建议手动执行 sudo apt autoremove" >> "$cleanup_report"
+                else
+                    echo -e "       ${YELLOW}⚠${NC} 当前环境无 dpkg，跳过"
+                fi
+                ;;
+            docker)
+                if command -v docker &>/dev/null && docker info &>/dev/null; then
+                    docker image prune -f 2>/dev/null || true
+                    docker system prune -f 2>/dev/null || true
+                    echo -e "       ${GREEN}✓${NC} 已清理 Docker 悬空镜像和缓存"
+                    echo "  Docker 清理: 已清理悬空镜像和缓存" >> "$cleanup_report"
+                else
+                    echo -e "       ${YELLOW}⚠${NC} 当前环境无 Docker，跳过"
+                fi
+                ;;
+        esac
+        echo ""
+    done
+
+    # ---------- 4. 自愈动作 ----------
+    echo -e "  ${YELLOW}[自愈]${NC} 执行系统修复..."
+    echo ""
+
+    if command -v apt &>/dev/null; then
+        echo -e "  ${CYAN}▸${NC} 修复 apt 依赖..."
+        apt --fix-broken install -y 2>/dev/null && echo -e "       ${GREEN}✓ apt 依赖修复完成${NC}" || echo -e "       ${YELLOW}⚠ 需要 sudo 或环境不支持${NC}"
+        echo ""
+    fi
+
+    for svc in cron ssh docker; do
+        if command -v systemctl &>/dev/null && systemctl is-active "$svc" &>/dev/null; then
+            echo -e "  ${CYAN}▸${NC} 重启服务: ${svc}..."
+            systemctl try-restart "$svc" 2>/dev/null && echo -e "       ${GREEN}✓ ${svc} 已重启${NC}" || echo -e "       ${YELLOW}⚠ ${svc} 重启失败${NC}"
+        fi
+    done
+    echo ""
+
+    # ---------- 5. 汇总报告 ----------
+    echo "  -------------------------------------------------------------"
+    echo -e "  清理完成，本次共释放: ${GREEN}${total_freed} MB${NC}"
+    echo "  详细报告: $cleanup_report"
+    echo "  -------------------------------------------------------------"
+    echo ""
+    echo "  总计释放磁盘空间: ${total_freed} MB" >> "$cleanup_report"
+    echo "========================================" >> "$cleanup_report"
+    log_action "磁盘智能清理与自愈完成，释放 ${total_freed} MB"
+    read -p "  按回车键返回..." _
 }
 
 run_patrol_menu() {
     header
-    echo -e "${YELLOW}--- [模块 5] 自动巡逻巡检 ---${NC}"
-    # 调用 patrol.sh 中的 run_patrol 函数
-    # 临时禁用 set -e，因为 run_patrol 在发现异常时返回非零，
-    # 防止 set -e 导致脚本直接退出
-    set +e
+    echo -e "${YELLOW}--- [模块 4] 自动巡逻巡检 ---${NC}"
     run_patrol
     local ret=$?
-    set -e
     if [ $ret -eq 0 ]; then
         echo -e "${GREEN}✓ 巡逻完成：系统状态正常。${NC}"
     else
@@ -178,7 +897,7 @@ run_patrol_menu() {
 
 about_project() {
     header
-    echo -e "${YELLOW}--- [模块 7] 关于项目 ---${NC}"
+    echo -e "${YELLOW}--- [模块 6] 关于项目 ---${NC}"
     echo " 团队: 翟浩雯、李薇"
     echo " 技术: Bash, grep/awk/sed, 并发进程, 日志分析,"
     echo "        系统监控, 配置解耦, 自动巡逻"
@@ -191,7 +910,7 @@ main_menu() {
         echo " 1) 服务器节点资产管理"
         echo " 2) 多进程性能指标并行监控"
         echo " 3) 内核日志清洗与安全审计"
-        echo " 4) 智能化磁盘清理与自愈"
+        echo " 4) 磁盘临时文件清理"
         echo " 5) 启动自动巡逻巡检"
         echo " 6) 后台巡逻守护（daemon）"
         echo " 7) 关于项目技术架构与分工"
@@ -214,7 +933,7 @@ main_menu() {
 patrol_daemon_menu() {
     while true; do
         header
-        echo -e "${YELLOW}--- [模块 6] 后台巡逻守护进程管理 ---${NC}"
+        echo -e "${YELLOW}--- [模块 5] 后台巡逻守护进程管理 ---${NC}"
         echo " 1) 启动后台巡逻守护进程"
         echo " 2) 停止后台巡逻守护进程"
         echo " 3) 查看守护进程状态"
@@ -222,23 +941,17 @@ patrol_daemon_menu() {
         read -p "请输入子菜单指令 (1-4): " nc
         case "$nc" in
             1)
-                set +e
-                run_patrol_daemon
-                set -e
-                read -p "按回车键返回..." _
-                ;;
-            2)
-                set +e
-                stop_patrol_daemon
-                set -e
-                read -p "按回车键返回..." _
-                ;;
-            3)
-                set +e
-                patrol_daemon_status
-                set -e
-                read -p "按回车键返回..." _
-                ;;
+                 run_patrol_daemon
+                 read -p "按回车键返回..." _
+                 ;;
+             2)
+                 stop_patrol_daemon
+                 read -p "按回车键返回..." _
+                 ;;
+             3)
+                 patrol_daemon_status
+                 read -p "按回车键返回..." _
+                 ;;
             4) return ;;
             *) echo "无效指令"; sleep 1 ;;
         esac

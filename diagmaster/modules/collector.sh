@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # ==============================================================================
 # DiagMaster - 多进程性能指标并行采集模块 (v1.0)
@@ -99,8 +99,8 @@ collect_load() {
 # 采集进程数
 collect_processes() {
     local proc_count=""
-    if [ -r /proc/stat ]; then
-        proc_count=$(grep -c '^[^ ]' /proc/[0-9]*/stat 2>/dev/null || echo "0")
+    if [ -d /proc ]; then
+        proc_count=$(ls /proc/[0-9]* 2>/dev/null | wc -l)
     elif command -v ps &>/dev/null; then
         proc_count=$(ps aux 2>/dev/null | wc -l)
     fi
@@ -123,9 +123,8 @@ check_threshold() {
 colored_status() {
     local value="$1" threshold="$2"
     local exceeded
-    exceeded=$(check_threshold "$value" "$value" "$threshold" 2>/dev/null; check_threshold "$value" "$threshold")
-    # 分级着色
-    if command -v bc &>/dev/null; then
+    exceeded=$(check_threshold "value" "$value" "$threshold" 2>/dev/null)
+    if [ "$exceeded" = "1" ]; then
         local margin
         margin=$(echo "$value - $threshold" | bc -l 2>/dev/null || echo "0")
         local margin_int="${margin%.*}"
@@ -137,12 +136,7 @@ colored_status() {
             echo -e "${GREEN}${value}%${NC}"
         fi
     else
-        local vt="${value%.*}" tt="${threshold%.*}"
-        if [ "$vt" -gt "$tt" ]; then
-            echo -e "${RED}${value}%${NC}"
-        else
-            echo -e "${GREEN}${value}%${NC}"
-        fi
+        echo -e "${GREEN}${value}%${NC}"
     fi
 }
 

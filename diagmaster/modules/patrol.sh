@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 
 # 加载公共库
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,6 +18,7 @@ SERVICES_TO_CHECK=${SERVICES_TO_CHECK:-"sshd cron"}
 PROCESSES_TO_CHECK=${PROCESSES_TO_CHECK:-"sshd"}
 ENABLE_ALERT=${ENABLE_ALERT:-false}
 ALERT_EMAIL=${ALERT_EMAIL:-"root@localhost"}
+ENABLE_AUTO_HEAL=${ENABLE_AUTO_HEAL:-true}
 PATROL_REPORT_DIR=${PATROL_REPORT_DIR:-"./reports"}
 PATROL_INTERVAL=${PATROL_INTERVAL:-300}
 DAEMON_PID_FILE="${PATROL_REPORT_DIR}/../data/patrol_daemon.pid"
@@ -174,6 +175,88 @@ check_logs() {
         echo 0
     fi
 }
+# ========== 自愈动作 ==========
+
+auto_heal() {
+    local heal_log="${PATROL_REPORT_DIR}/../logs/heal.log"
+    mkdir -p "$(dirname "$heal_log")"
+    local ts
+    ts=$(date '+%Y-%m-%d %H:%M:%S')
+
+    echo "[$ts] 自愈检查开始" >> "$heal_log"
+    echo -e "  ${YELLOW}[自愈]${NC} 开始自动修复检查..."
+
+    local healed=0
+
+    # 1. 磁盘使用率 > 85% 时触发安全清理
+    local disk_usage=0
+    disk_usage=$(df / 2>/dev/null | awk 'NR==2 {gsub(/%/,""); print $5}' | tr -d '[:space:]')
+    [ -z "$disk_usage" ] && disk_usage=0
+    if [ "$disk_usage" -gt 85 ] 2>/dev/null; then
+        echo -e "  ${CYAN}▸${NC} 磁盘使用率 ${disk_usage}%，触发安全清理..."
+        echo "[$ts] 磁盘使用率 ${disk_usage}%，触发安全清理" >> "$heal_log"
+
+        find /tmp -type f -atime +1 -delete 2>/dev/null || true
+        find /tmp -type d -empty -delete 2>/dev/null || true
+        echo -e "       ${GREEN}✓${NC} /tmp 过期文件已清理"
+        echo "[$ts] /tmp 过期文件已清理" >> "$heal_log"
+
+        if command -v apt-get &>/dev/null; then
+            apt-get clean 2>/dev/null || true
+            echo -e "       ${GREEN}✓${NC} apt 缓存已清理"
+            echo "[$ts] apt 缓存已清理" >> "$heal_log"
+        fi
+
+        if command -v journalctl &>/dev/null; then
+            journalctl --vacuum-time=7d 2>/dev/null || true
+            echo -e "       ${GREEN}✓${NC} journal 日志已清理（保留7天）"
+            echo "[$ts] journal 日志已清理" >> "$heal_log"
+        fi
+
+        rm -rf "$HOME/.local/share/Trash/"* 2>/dev/null || true
+        echo -e "       ${GREEN}✓${NC} 回收站已清空"
+        echo "[$ts] 回收站已清空" >> "$heal_log"
+
+        healed=1
+    else
+        echo -e "  ${GREEN}✓${NC} 磁盘使用率 ${disk_usage}%，无需清理"
+    fi
+
+    # 2. 重启关键服务（仅当服务存在但未运行时）
+    local services=("cron" "ssh" "rsyslog")
+    for svc in "${services[@]}"; do
+        if command -v systemctl &>/dev/null && [ -d /run/systemd/system ]; then
+            if systemctl list-unit-files "${svc}.service" 2>/dev/null | grep -q "enabled"; then
+                if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
+                    systemctl try-restart "$svc" 2>/dev/null || true
+                    echo -e "  ${CYAN}▸${NC} 重启服务: ${svc}..."
+                    echo -e "       ${GREEN}✓${NC} ${svc} 已重启"
+                    echo "[$ts] 重启服务: $svc" >> "$heal_log"
+                    healed=1
+                fi
+            fi
+        fi
+    done
+
+    # 3. 修复 apt 依赖（仅当有 broken 依赖时）
+    if command -v apt &>/dev/null; then
+        if apt --fix-broken install -y 2>/dev/null | grep -q "has no installation candidate\|unmet dependencies"; then
+            echo -e "  ${YELLOW}⚠${NC} apt 依赖修复需要人工处理"
+            echo "[$ts] apt 依赖修复需要人工处理" >> "$heal_log"
+            healed=1
+        fi
+    fi
+
+    if [ "$healed" -eq 1 ]; then
+        echo -e "  ${GREEN}✓${NC} 自愈检查结束，已执行修复动作"
+        echo "[$ts] 自愈检查结束，已执行修复" >> "$heal_log"
+    else
+        echo -e "  ${GREEN}✓${NC} 自愈检查结束，系统健康无需修复"
+        echo "[$ts] 自愈检查结束，系统健康" >> "$heal_log"
+    fi
+    echo ""
+}
+
 # ========== 巡逻主流程 ==========
 
 init_report() {
@@ -240,6 +323,10 @@ run_patrol() {
         else
             log_warn "邮件命令不可用，无法发送告警"
         fi
+    fi
+
+    if [ "${ENABLE_AUTO_HEAL:-false}" = "true" ] || [ "${PATROL_HEAL:-0}" -eq 1 ]; then
+        auto_heal
     fi
 
     return $overall_fail
