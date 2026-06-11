@@ -165,8 +165,12 @@ show_nodes_with_status() {
     while IFS= read -r node; do
         [ -z "$node" ] && continue
         idx=$((idx + 1))
-        local status="${GREEN}在线${NC}"
-        [ "$node" != "localhost" ] && ! test_ssh_connection "$node" 3 && status="${RED}离线${NC}"
+        local status="${YELLOW}检测中...${NC}"
+        if [ "$node" = "localhost" ]; then
+            status="${GREEN}本机${NC}"
+        else
+            test_ssh_connection "$node" 1 >/dev/null 2>&1 && status="${GREEN}在线${NC}" || status="${RED}离线${NC}"
+        fi
         printf "  ${GREEN}%-6s${NC} %-20s %b\n" "$idx" "$node" "$status"
     done < "$NODE_DB"
     status_bar "节点总数: $idx"
