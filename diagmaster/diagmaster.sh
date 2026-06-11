@@ -51,6 +51,42 @@ SP="  "
 SEP="${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 THIN_SEP="${DGRAY}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
 
+wt_menu() {
+    local title="$1"
+    local text="$2"
+    shift 2
+    local opts=()
+    while [ $# -gt 0 ]; do
+        opts+=("$1" "$2")
+        shift 2
+    done
+    CHOICE=$(whiptail --title "$title" --menu "$text" 20 70 12 "${opts[@]}" 3>&1 1>&2 2>&3)
+    echo "$CHOICE"
+}
+
+wt_msgbox() {
+    local title="$1"
+    local text="$2"
+    local h="${3:-10}" w="${4:-60}"
+    whiptail --title "$title" --msgbox "$text" "$h" "$w" 3>&1 1>&2 2>&3
+}
+
+wt_yesno() {
+    local title="$1"
+    local text="$2"
+    local h="${3:-8}" w="${4:-50}"
+    whiptail --title "$title" --yesno "$text" "$h" "$w" 3>&1 1>&2 2>&3
+    return $?
+}
+
+wt_inputbox() {
+    local title="$1"
+    local text="$2"
+    local init="${3:-}"
+    RESULT=$(whiptail --title "$title" --inputbox "$text" 10 60 "$init" 3>&1 1>&2 2>&3)
+    echo "$RESULT"
+}
+
 header() {
     clear
     echo ""
@@ -120,27 +156,23 @@ log_action() {
 
 node_management() {
     while true; do
-        clear
-        show_brand
-        section_header "节点管理 | 分布式服务器资产与 SSH 管控"
-        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
-            "1) 查看节点列表" "2) 新增受控节点" "3) 删除失效节点"
-        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
-            "4) 测试节点连接" "5) 查看节点详情"
-        printf "  ${YELLOW}%-20s${NC}  ${RED}%-20s${NC}\n" \
-            "6) 批量远程诊断" "0) 返回主菜单"
-        status_bar "就绪"
-        printf "  ${CYAN}»${NC} 请输入选项: "
-        read -r nc
-        case "$nc" in
+        CHOICE=$(wt_menu "模块 1 | 节点管理" \
+            "分布式服务器资产与 SSH 管控" \
+            "1" "查看受控节点列表（含状态）" \
+            "2" "新增受控服务器节点" \
+            "3" "删除失效服务器节点" \
+            "4" "测试节点连接" \
+            "5" "查看节点详细信息" \
+            "6" "批量远程诊断（分布式采集）" \
+            "0" "返回主菜单")
+        case "$CHOICE" in
             1) show_nodes_with_status ;;
             2) add_new_node ;;
             3) delete_node ;;
             4) test_node_connection ;;
             5) show_node_details ;;
             6) batch_remote_diagnose ;;
-            0|q|Q) return ;;
-            *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
+            0|"") return ;;
         esac
     done
 }
@@ -942,22 +974,17 @@ about_project() {
 
 patrol_daemon_menu() {
     while true; do
-        clear
-        show_brand
-        section_header "后台守护 | 定时巡逻守护进程管理"
-        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
-            "1) 启动守护进程" "2) 停止守护进程" "3) 查看运行状态"
-        printf "  ${RED}%-20s${NC}\n" \
-            "0) 返回主菜单"
-        status_bar "就绪"
-        printf "  ${CYAN}»${NC} 请输入选项: "
-        read -r nc
-        case "$nc" in
-            1) loading "正在启动守护进程"; run_patrol_daemon; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
-            2) loading "正在停止守护进程"; stop_patrol_daemon; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
-            3) patrol_daemon_status; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
-            0|q|Q) return ;;
-            *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
+        CHOICE=$(wt_menu "模块 6 | 后台守护" \
+            "定时巡逻守护进程管理" \
+            "1" "启动后台巡逻守护进程" \
+            "2" "停止后台巡逻守护进程" \
+            "3" "查看守护进程状态" \
+            "0" "返回主菜单")
+        case "$CHOICE" in
+            1) wt_msgbox "启动守护" "警告：此操作需要 root 权限，请确保已配置 systemd 服务文件。" 10 50; run_patrol_daemon ;;
+            2) stop_patrol_daemon ;;
+            3) patrol_daemon_status ;;
+            0|"") return ;;
         esac
     done
 }
@@ -993,27 +1020,24 @@ status_bar() {
 
 main_menu() {
     while true; do
-        clear
-        show_brand
-        echo -e "  ${BOLD}🚀 快速操作入口${NC}"
-        printf "  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}\n" \
-            "1) 节点资产" "2) 性能监控" "3) 安全审计" "4) 磁盘清理"
-        printf "  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${YELLOW}%-18s${NC}${DGRAY}|${NC}  ${RED}%-18s${NC}\n" \
-            "5) 自动巡检" "6) 后台守护" "7) 关于项目" "0) 安全退出"
-        echo -e "  ${SEP}"
-        status_bar "在线"
-        printf "  ${CYAN}»${NC} 请输入功能编号: "
-        read -r ch
-        case "$ch" in
-            1) loading "正在加载节点管理模块"; node_management ;;
-            2) loading "正在加载性能监控模块"; run_collector ;;
-            3) loading "正在加载安全审计模块"; run_log_audit ;;
-            4) loading "正在加载磁盘清理模块"; disk_cleanup ;;
-            5) loading "正在加载自动巡检模块"; run_patrol_menu ;;
-            6) loading "正在加载后台守护模块"; patrol_daemon_menu ;;
-            7) loading "正在加载关于项目"; about_project ;;
-            0|q|Q) echo ""; echo -e "  ${GREEN}感谢使用 DiagMaster，再见！${NC}"; echo ""; exit 0 ;;
-            *) echo ""; echo -e "  ${RED}✖ 无效指令，请重新输入${NC}"; sleep 1 ;;
+        CHOICE=$(wt_menu "DiagMaster v2.0 | 服务器多维智能诊断运维平台" "请选择功能编号进行操作:" \
+            "1" "节点资产 | 分布式服务器资产与 SSH 管控" \
+            "2" "性能监控 | CPU/内存/磁盘 多进程并行采集" \
+            "3" "安全审计 | 内核日志清洗与风险评分" \
+            "4" "磁盘清理 | 智能清理与自愈修复" \
+            "5" "自动巡检 | 一键系统健康检查" \
+            "6" "后台守护 | 定时巡逻守护进程管理" \
+            "7" "关于项目 | 技术架构与团队介绍" \
+            "0" "安全退出系统")
+        case "$CHOICE" in
+            1) node_management ;;
+            2) run_collector ;;
+            3) run_log_audit ;;
+            4) disk_cleanup ;;
+            5) run_patrol_menu ;;
+            6) patrol_daemon_menu ;;
+            7) about_project ;;
+            0|"") wt_msgbox "感谢使用" "感谢使用 DiagMaster，再见！" 8 40; clear; exit 0 ;;
         esac
     done
 }
