@@ -23,6 +23,37 @@ RISK_SCORE_THRESHOLD=${RISK_SCORE_THRESHOLD:-60}
 AUDIT_DAYS=${AUDIT_DAYS:-7}
 WSL_MODE=${WSL_MODE:-auto}
 
+# ========== 错误栈收集（Error Stack） ==========
+ERROR_STACK_FILE="${DATA_DIR}/error_stack.tmp"
+reset_error_stack() {
+    > "$ERROR_STACK_FILE"
+}
+push_error() {
+    local code="$1" msg="$2" fix_plan="$3"
+    echo "[$(date '+%H:%M:%S')] 错误码=$code | 描述=$msg | 修复建议=$fix_plan" >> "$ERROR_STACK_FILE"
+}
+get_error_count() {
+    wc -l < "$ERROR_STACK_FILE" 2>/dev/null || echo "0"
+}
+render_error_stack() {
+    if [ ! -s "$ERROR_STACK_FILE" ]; then
+        echo "无受限操作"
+        return
+    fi
+    echo "### 受限操作详情"
+    echo ""
+    echo "| 时间 | 错误码 | 描述 | 修复建议 |"
+    echo "|------|--------|------|----------|"
+    while IFS= read -r line; do
+        local ts code msg fix
+        ts=$(echo "$line" | cut -d' ' -f1)
+        code=$(echo "$line" | sed -n 's/.*错误码=\([^|]*\).*/\1/p')
+        msg=$(echo "$line" | sed -n 's/.*描述=\([^|]*\).*/\1/p')
+        fix=$(echo "$line" | sed -n 's/.*修复建议=\(.*\)/\1/p')
+        echo "| $ts | $code | $msg | $fix |"
+    done < "$ERROR_STACK_FILE"
+}
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -929,14 +960,52 @@ EOF
     echo "" >> "$report_file"
     echo "---" >> "$report_file"
     echo "*报告由 DiagMaster v2.0 自动生成 | 审计窗口: 近 ${AUDIT_DAYS} 天 | 环境: $(is_wsl && echo "WSL" || echo "Linux Server")*" >> "$report_file"
+
+    # 同时生成结构化 JSON 报告（便于审计链采集）
+    local json_report="${report_file%.md}.json"
+    cat << EOF > "$json_report"
+{
+  "version": "2.0",
+  "timestamp": "$(date '+%Y-%m-%d %H:%M:%S')",
+  "hostname": "$(hostname)",
+  "env": "$(is_wsl && echo "WSL" || echo "Linux Server")",
+  "audit_window_days": ${AUDIT_DAYS},
+  "risk_score": ${risk_score},
+  "risk_level": "$(echo "$risk_desc" | sed 's/\033\[[0-9;]*m//g')",
+  "checks": {
+    "oom_count": ${oom_count:-0},
+    "kernel_errors": ${kern_errors:-0},
+    "ssh_fail": ${ssh_fail:-0},
+    "ssh_success": ${ssh_success:-0},
+    "sudo_fail": ${sudo_fail:-0},
+    "syslog_errors": ${syslog_errors:-0},
+    "reboot_count": ${reboot_count:-0},
+    "suspicious_logins": ${suspicious_logins:-0},
+    "port_scans": ${port_scans:-0},
+    "user_enum": ${user_enum:-0},
+    "malware": ${malware:-0},
+    "correlations": ${correlations:-0},
+    "anomaly_count": ${anomaly_count:-0}
+  },
+  "actions": {
+    "tmp_cleaned": true,
+    "apt_cleaned": true,
+    "journal_vacuumed": true,
+    "services_restarted": []
+  },
+  "report_path": "$report_file"
+}
+EOF
 }
 
 # ========== 主审计流程 ==========
 
 run_log_audit() {
-    echo -e "${CYAN}==================================================${NC}"
-    echo -e "${CYAN}    DiagMaster - 深度日志安全审计${NC}"
-    echo -e "${CYAN}==================================================${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}安全审计${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}│${NC}  内核日志清洗、漏洞扫描与风险评分               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     echo -e "  ${YELLOW}[1/8]${NC} 检测可用日志源..."
@@ -1022,12 +1091,48 @@ run_log_audit() {
     echo -e "  ${GREEN}✓${NC} 发现 ${anomaly_count} 项历史异常"
     echo ""
 
-    echo -e "  ${YELLOW}[完成]${NC} 生成审计报告..."
+    echo -e "  ${YELLOW}[完整]${NC} 生成审计报告..."
+
+    reset_error_stack
+
     local report_path="${REPORT_DIR}/diag_report_$(date +%Y%m%d_%H%M%S).md"
     generate_report "$report_path" "$oom_count" "$kern_errors" "$ssh_info" \
         "$privesc" "$syslog_errors" "$reboot_count" \
         "$suspicious_logins" "$port_scans" "$user_enum" "$malware" \
         "$risk_score" "$correlations" "$anomaly_count"
+
+    if [ ! -f "$report_path" ]; then
+        push_error "E100" "审计报告生成失败" "检查 REPORT_DIR 目录权限"
+    fi
+
+    local json_report="${report_path%.md}.json"
+    if [ ! -f "$json_report" ]; then
+        push_error "E101" "JSON 报告生成失败" "检查磁盘空间或重试"
+    fi
+
+    if [ -f "$ERROR_STACK_FILE" ] && [ -s "$ERROR_STACK_FILE" ]; then
+        echo ""
+        echo ""
+        echo -e "${CYAN}=== 受限操作详情 ===${NC}"
+        render_error_stack
+        echo -e "受限操作总计: ${YELLOW}$(get_error_count) 项${NC}"
+        echo ""
+    fi
+
+    echo -e "${CYAN}=== 最终审计汇总 ===${NC}"
+    echo -e "  风险评分:     ${risk_score}/100"
+    echo -e "  ${YELLOW}关键指标:${NC}"
+    echo -e "    OOM 事件:     ${oom_count} 次"
+    echo -e "    SSH 爆破:     ${ssh_fail} 次"
+    echo -e "    ️ 内核错误:     ${kern_errors} 条"
+    echo -e "    ️ 异常登录:     ${suspicious_logins} 次"
+    echo -e "    ️ 权限提升:     ${privesc} 条"
+    echo -e "    ️ 恶性软件:     ${malware} 条"
+    echo -e "    ️ 关联事件:     ${correlations} 条"
+    echo -e "    ️ 历史异常:     ${anomaly_count} 条"
+    echo -e "    ️ 系统错误:     ${syslog_errors} 条"
+    echo -e "    ️ 受限操作:     $(get_error_count) 条"
+    echo ""
 
     local env_tag="server"
     is_wsl && env_tag="wsl"

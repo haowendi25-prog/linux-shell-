@@ -44,11 +44,30 @@ CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-header() {
+show_brand() {
     clear
-    echo -e "${CYAN}==================================================${NC}"
-    echo -e "${CYAN}    DiagMaster 服务器一键多维智能诊断工具箱 v2.0   ${NC}"
-    echo -e "${CYAN}==================================================${NC}"
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                                                          ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}   ${GREEN}DiagMaster${NC} 服务器一键多维智能诊断工具箱 ${YELLOW}v2.0${NC}        ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                                                          ${CYAN}║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+}
+
+show_brand() {
+    echo -e "${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${NC}                                                          ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}   ${GREEN}DiagMaster${NC} 服务器一键多维智能诊断工具箱 ${YELLOW}v2.0${NC}        ${CYAN}║${NC}"
+    echo -e "${CYAN}║${NC}                                                          ${CYAN}║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "   ${GREEN}●${NC} 分布式节点管理"
+    echo -e "   ${GREEN}●${NC} 性能监控采集"
+    echo -e "   ${GREEN}●${NC} 安全审计分析"
+    echo -e "   ${GREEN}●${NC} 智能磁盘清理"
+    echo -e "   ${GREEN}●${NC} 自动巡逻巡检"
+    echo -e "   ${GREEN}●${NC} 后台守护进程"
+    echo ""
 }
 
 log_action() {
@@ -57,23 +76,35 @@ log_action() {
 
 node_management() {
     while true; do
-        header
-        echo -e "${YELLOW}--- [模块 1] 受控服务器节点资产管理 ---${NC}"
-        echo " 1) 查看受控节点列表（含状态）"
-        echo " 2) 新增受控服务器节点"
-        echo " 3) 删除失效服务器节点"
-        echo " 4) 测试节点连接"
-        echo " 5) 查看节点详细信息"
-        echo " 6) 返回主菜单"
-        read -p "请输入子菜单指令 (1-6): " nc
-
+        clear
+        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+        echo -e "  ${CYAN}│${NC}  ${RED}■${NC} ${YELLOW}节点管理${NC}                                     ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  分布式服务器资产与 SSH 管控中心                     ${CYAN}│${NC}"
+        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+        echo ""
+        echo -e "  ${GREEN}1${NC}) 查看受控节点列表（含状态）"
+        echo -e "  ${GREEN}2${NC}) 新增受控服务器节点"
+        echo -e "  ${GREEN}3${NC}) 删除失效服务器节点"
+        echo -e "  ${GREEN}4${NC}) 测试节点连接"
+        echo -e "  ${GREEN}5${NC}) 查看节点详细信息"
+        echo -e "  ${GREEN}6${NC}) 批量远程诊断（分布式采集）"
+        echo -e "  ${RED}0${NC}) 返回主菜单"
+        echo ""
+        printf "  ${CYAN}»${NC} 请输入选项: "
+        read -r nc
         case "$nc" in
             1) show_nodes_with_status ;;
             2) add_new_node ;;
             3) delete_node ;;
             4) test_node_connection ;;
             5) show_node_details ;;
-            6) return ;;
+            6) remote_diagnostics ;;
+            7|0) return ;;
+            *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
+        esac
+    done
+}
+            7) return ;;
             *)
                 echo -e "${RED}❌ 无效指令${NC}"
                 sleep 1
@@ -83,8 +114,10 @@ node_management() {
 }
 
 show_nodes_with_status() {
-    header
-    echo -e "${YELLOW}--- 受控服务器节点列表 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}   ${YELLOW}全部受控节点${NC}                               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
@@ -141,8 +174,10 @@ show_nodes_with_status() {
 }
 
 add_new_node() {
-    header
-    echo -e "${YELLOW}--- 添加受控服务器节点 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}   ${YELLOW}添加受控节点${NC}                               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     read -p "请输入节点地址 (IP 或域名，或输入 'localhost'): " node_addr
@@ -214,8 +249,10 @@ add_new_node() {
 }
 
 delete_node() {
-    header
-    echo -e "${YELLOW}--- 删除受控服务器节点 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}   ${RED}删除受控节点${NC}                               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
@@ -264,8 +301,10 @@ delete_node() {
 }
 
 test_node_connection() {
-    header
-    echo -e "${YELLOW}--- 测试节点连接 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}   ${GREEN}测试节点连接${NC}                               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
@@ -346,7 +385,7 @@ test_node_connection() {
 }
 
 show_node_details() {
-    header
+    show_brand
     echo -e "${YELLOW}--- 节点详细信息 ---${NC}"
     echo ""
 
@@ -422,9 +461,141 @@ show_node_details() {
     read -p "按回车键返回..." _
 }
 
+batch_remote_diagnose() {
+    show_brand
+    echo -e "${YELLOW}--- [模块 1] 批量远程诊断（分布式采集） ---${NC}"
+    echo ""
+
+    if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
+        echo -e "${YELLOW}⚠️  暂无受控节点，请先在模块1中添加节点${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    local nodes=()
+    local online_nodes=()
+    local offline_nodes=()
+
+    while IFS= read -r node; do
+        [ -z "$node" ] && continue
+        nodes+=("$node")
+        if [ "$node" = "localhost" ] || test_ssh_connection "$node" 3; then
+            online_nodes+=("$node")
+        else
+            offline_nodes+=("$node")
+        fi
+    done < "$NODE_DB"
+
+    if [ ${#online_nodes[@]} -eq 0 ]; then
+        echo -e "${YELLOW}⚠️  所有节点均离线，无法执行远程诊断${NC}"
+        read -p "按回车键返回..." _
+        return
+    fi
+
+    echo "待诊断节点 (${#online_nodes[@]} 在线 / ${#offline_nodes[@]} 离线):"
+    for node in "${online_nodes[@]}"; do
+        echo -e "  ${GREEN}●${NC} $node"
+    done
+    for node in "${offline_nodes[@]}"; do
+        echo -e "  ${RED}○${NC} $node (跳过)"
+    done
+    echo ""
+
+    local tmp_dir="$ROOT_DIR/data/batch_$$"
+    mkdir -p "$tmp_dir"
+    local pids=()
+
+    for node in "${online_nodes[@]}"; do
+        local safe_name
+        safe_name=$(echo "$node" | tr '/' '_' | tr ':' '_')
+        collect_remote "$node" > "$tmp_dir/${safe_name}.out" 2>/dev/null &
+        pids+=($!)
+    done
+
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+
+    echo "========================================"
+    echo "  批量诊断结果汇总"
+    echo "========================================"
+
+    local any_fail=0
+    for node in "${online_nodes[@]}"; do
+        local safe_name
+        safe_name=$(echo "$node" | tr '/' '_' | tr ':' '_')
+        local node_file="$tmp_dir/${safe_name}.out"
+
+        if [ ! -f "$node_file" ] || [ ! -s "$node_file" ]; then
+            echo -e "[${YELLOW}${node}${NC}] 采集失败"
+            any_fail=1
+            continue
+        fi
+
+        local content
+        content=$(cat "$node_file")
+
+        if [ "$content" = "NODE_OFFLINE" ]; then
+            echo -e "[${YELLOW}${node}${NC}] ${RED}离线${NC}"
+            any_fail=1
+            continue
+        fi
+
+        local cpu_val mem_val disk_val load_val proc_val
+        cpu_val=$(echo "$content" | grep '^CPU=' | head -1 | cut -d'=' -f2)
+        mem_val=$(echo "$content" | grep '^MEM=' | head -1 | cut -d'=' -f2)
+        disk_val=$(echo "$content" | grep '^DISK=' | head -1 | cut -d'=' -f2)
+        load_val=$(echo "$content" | grep '^LOAD=' | head -1 | cut -d'=' -f2)
+        proc_val=$(echo "$content" | grep '^PROC=' | head -1 | cut -d'=' -f2)
+
+        cpu_val=${cpu_val:-0}
+        mem_val=${mem_val:-0}
+        disk_val=${disk_val:-0}
+        load_val=${load_val:-N/A}
+        proc_val=${proc_val:-0}
+
+        echo ""
+        echo -e "[${CYAN}${node}${NC}]"
+        echo "  CPU: $(colored_status "$cpu_val" "$CPU_WARN_THRESHOLD")"
+        echo "  内存: $(colored_status "$mem_val" "$MEM_WARN_THRESHOLD")"
+        echo "  磁盘: $(colored_status "$disk_val" "$DISK_WARN_THRESHOLD")"
+        echo "  负载: $load_val"
+        echo "  进程: $proc_val"
+
+        if [ "$(check_threshold "cpu" "$cpu_val" "$CPU_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ CPU 过高${NC}"
+            any_fail=1
+        fi
+        if [ "$(check_threshold "mem" "$mem_val" "$MEM_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ 内存过高${NC}"
+            any_fail=1
+        fi
+        if [ "$(check_threshold "disk" "$disk_val" "$DISK_WARN_THRESHOLD")" = "1" ]; then
+            echo -e "  ${RED}⚠ 磁盘过高${NC}"
+            any_fail=1
+        fi
+    done
+
+    echo ""
+    echo "========================================"
+    if [ "$any_fail" -eq 0 ]; then
+        echo -e "${GREEN}✓ 全部节点指标正常${NC}"
+    else
+        echo -e "${RED}⚠ 部分节点存在告警${NC}"
+    fi
+    echo "========================================"
+
+    rm -rf "$tmp_dir"
+    log_action "执行批量远程诊断 (共 ${#nodes[@]} 个节点)"
+    read -p "按回车键返回..." _
+}
+
 run_collector() {
-    header
-    echo -e "${YELLOW}--- [模块 2] 多进程性能指标并行监控 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${GREEN}■${NC} ${GREEN}性能监控${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}│${NC}  CPU、内存、磁盘多进程并行采集与告警          ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     if ! command_exists collect_cpu 2>/dev/null; then
@@ -449,23 +620,27 @@ run_collector() {
     fi
 
     if [ ${#online_nodes[@]} -eq 0 ]; then
-        echo -e "${YELLOW}⚠️  暂无在线节点可采集${NC}"
-        read -p "按回车键返回..." _
+        echo -e "  ${YELLOW}⚠️  暂无在线节点可采集${NC}"
+        printf "\n  ${CYAN}»${NC} 按回车键返回..."
+        read -r _
         return
     fi
 
-    echo "待采集节点 (${#online_nodes[@]} 在线 / ${#offline_nodes[@]} 离线):"
+    echo -e "  ${CYAN}待采集节点${NC} ${YELLOW}(${#online_nodes[@]} 在线 / ${#offline_nodes[@]} 离线)${NC}"
     for node in "${online_nodes[@]}"; do
-        echo -e "  ${GREEN}●${NC} $node"
+        echo -e "    ${GREEN}●${NC} $node"
     done
     for node in "${offline_nodes[@]}"; do
-        echo -e "  ${RED}○${NC} $node (跳过)"
+        echo -e "    ${RED}○${NC} $node ${RED}(离线/跳过)${NC}"
     done
     echo ""
 
     local tmp_dir="$ROOT_DIR/data/collect_$$"
     mkdir -p "$tmp_dir"
     local pids=()
+
+    echo -e "  ${CYAN}▸${NC} 正在并行采集指标..."
+    echo ""
 
     for node in "${online_nodes[@]}"; do
         local safe_name
@@ -479,9 +654,9 @@ run_collector() {
         wait "$pid" 2>/dev/null || true
     done
 
-    echo "========================================"
-    echo "  采集结果汇总"
-    echo "========================================"
+    echo -e "  ${CYAN}══════════════════════════════════════════════════════════${NC}"
+    echo -e "  ${CYAN}  采集结果汇总${NC}"
+    echo -e "  ${CYAN}══════════════════════════════════════════════════════════${NC}"
 
     for node in "${online_nodes[@]}"; do
         local safe_name
@@ -556,19 +731,23 @@ run_collector() {
 }
 
 run_log_audit() {
-    header
-    echo -e "${YELLOW}--- [模块 3] 内核日志清洗与安全审计 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}安全审计${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}│${NC}  内核日志清洗、漏洞扫描与风险评分               ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+    echo ""
     if [ -f "$ROOT_DIR/modules/log_analyzer.sh" ]; then
         bash "$ROOT_DIR/modules/log_analyzer.sh"
     else
-        echo "log_analyzer.sh 不存在，执行内联分析"
+        echo -e "  ${RED}✖ log_analyzer.sh 不存在，执行内联分析${NC}"
         mkdir -p "$ROOT_DIR/data"
         dmesg 2>/dev/null | grep -c -i "out of memory" > "$ROOT_DIR/data/oom_count.tmp" || echo "0" > "$ROOT_DIR/data/oom_count.tmp"
         grep -c "Failed password" /var/log/auth.log 2>/dev/null > "$ROOT_DIR/data/ssh_fail.tmp" || echo "0" > "$ROOT_DIR/data/ssh_fail.tmp"
     fi
     local oom_count; oom_count=$(cat "$ROOT_DIR/data/oom_count.tmp" 2>/dev/null || echo "0")
     local ssh_fail; ssh_fail=$(cat "$ROOT_DIR/data/ssh_fail.tmp" 2>/dev/null || echo "0")
-    echo " OOM 事件: ${oom_count} 次  | SSH 爆破尝试: ${ssh_fail} 次"
+    echo -e "  ${CYAN}OOM 事件${NC}: ${oom_count} 次   ${YELLOW}|${NC}   ${CYAN}SSH 爆破尝试${NC}: ${ssh_fail} 次"
     local report_path="$ROOT_DIR/reports/diag_report_$(date +%Y%m%d_%H%M%S).md"
     cat << EOF > "$report_path"
 # DiagMaster 自动化审计报告
@@ -576,14 +755,17 @@ run_log_audit() {
 - 内核OOM频次: ${oom_count}
 - SSH风险频次: ${ssh_fail}
 EOF
-    echo -e "${GREEN}✓ 报告已输出至: $report_path${NC}"
+    echo -e "\n  ${GREEN}✓ 报告已输出至: $report_path${NC}"
     log_action "执行高级日志审计"
-    read -p "按回车键返回..." _
+    printf "\n  ${CYAN}»${NC} 按回车键返回..."
+    read -r _
 }
 
 disk_cleanup() {
-    header
-    echo -e "${YELLOW}--- [模块 4] 磁盘智能清理与自愈 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}智能清理${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
     echo ""
 
     local total_freed=0
@@ -670,7 +852,7 @@ disk_cleanup() {
     # 旧内核（保留最近2个）
     local old_kernels=0
     if [ -d /boot ] && command -v dpkg &>/dev/null; then
-        old_kernels=$(dpkg --list 2>/dev/null | grep -E "linux-image-[0-9]+|linux-headers-[0-9]+" | grep -v "$(uname -r)" | wc -l | tr -d '[:space:]' || echo "0")
+        old_kernels=$(dpkg --list 2>/dev/null | grep -E "linux-image-[0-9]+|linux-show_brands-[0-9]+" | grep -v "$(uname -r)" | wc -l | tr -d '[:space:]' || echo "0")
         [ -z "$old_kernels" ] && old_kernels=0
     fi
     if [ "${old_kernels:-0}" -gt 0 ]; then
@@ -882,40 +1064,82 @@ disk_cleanup() {
 }
 
 run_patrol_menu() {
-    header
-    echo -e "${YELLOW}--- [模块 4] 自动巡逻巡检 ---${NC}"
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}自动巡检${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+    echo ""
     run_patrol
     local ret=$?
     if [ $ret -eq 0 ]; then
-        echo -e "${GREEN}✓ 巡逻完成：系统状态正常。${NC}"
+        echo ""
+        echo -e "  ${GREEN}✓ 巡逻完成：系统状态正常。${NC}"
     else
-        echo -e "${RED}⚠ 巡逻完成：发现异常项，请查看报告。${NC}"
+        echo ""
+        echo -e "  ${RED}⚠ 巡逻完成：发现异常项，请查看报告。${NC}"
     fi
     log_action "执行自动巡逻"
-    read -p "按回车键返回主菜单..." _
+    printf "\n  ${CYAN}»${NC} 按回车键返回主菜单..."
+    read -r _
 }
 
 about_project() {
-    header
-    echo -e "${YELLOW}--- [模块 6] 关于项目 ---${NC}"
-    echo " 团队: 翟浩雯、李薇"
-    echo " 技术: Bash, grep/awk/sed, 并发进程, 日志分析,"
-    echo "        系统监控, 配置解耦, 自动巡逻"
-    read -p "按回车键返回..." _
+    clear
+    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${CYAN}│${NC}  ${RED}■${NC} ${YELLOW}关于项目${NC}                                     ${CYAN}│${NC}"
+    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+    echo ""
+    echo -e "   ${CYAN}团队${NC}: 翟浩雯、李薇"
+    echo -e "   ${CYAN}技术${NC}: Bash, grep/awk/sed, 并发进程, 日志分析,"
+    echo -e "           系统监控, 配置解耦, 自动巡逻"
+    echo ""
+    echo -e "   ${CYAN}架构${NC}: 模块化设计，SSH 分布式管控，"
+    echo -e "           JSON/Markdown 双格式报告输出"
+    printf "\n  ${CYAN}»${NC} 按回车键返回主菜单..."
+    read -r _
+}
+
+patrol_daemon_menu() {
+    while true; do
+        clear
+        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}后台守护${NC}                                     ${CYAN}│${NC}"
+        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+        echo ""
+        echo -e "  ${GREEN}1${NC}) 启动后台巡逻守护进程"
+        echo -e "  ${GREEN}2${NC}) 停止后台巡逻守护进程"
+        echo -e "  ${GREEN}3${NC}) 查看守护进程状态"
+        echo -e "  ${RED}0${NC}) 返回主菜单"
+        echo ""
+        printf "  ${CYAN}»${NC} 请输入选项: "
+        read -r nc
+        case "$nc" in
+            1) run_patrol_daemon && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
+            2) stop_patrol_daemon && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
+            3) patrol_daemon_status && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
+            0) return ;;
+            *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
+        esac
+    done
 }
 
 main_menu() {
     while true; do
-        header
-        echo " 1) 服务器节点资产管理"
-        echo " 2) 多进程性能指标并行监控"
-        echo " 3) 内核日志清洗与安全审计"
-        echo " 4) 磁盘临时文件清理"
-        echo " 5) 启动自动巡逻巡检"
-        echo " 6) 后台巡逻守护（daemon）"
-        echo " 7) 关于项目技术架构与分工"
-        echo " 8) 安全退出"
-        read -p "请选择 (1-8): " ch
+        clear
+        show_brand
+        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}1${NC}  节点管理       ${CYAN}│${NC}  分布式服务器资产与SSH管控           ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}2${NC}  性能监控       ${CYAN}│${NC}  CPU/内存/磁盘多进程并行采集         ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}3${NC}  安全审计       ${CYAN}│${NC}  内核日志清洗与风险评分              ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}4${NC}  磁盘清理       ${CYAN}│${NC}  智能清理与自愈修复                  ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}5${NC}  自动巡检       ${CYAN}│${NC}  一键系统健康检查                    ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}6${NC}  后台守护       ${CYAN}│${NC}  定时巡逻守护进程管理                ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}7${NC}  关于项目       ${CYAN}│${NC}  技术架构与团队介绍                  ${CYAN}│${NC}"
+        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${RED}0${NC}  安全退出       ${CYAN}│${NC}                                      ${CYAN}│${NC}"
+        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
+        echo ""
+        printf "  ${CYAN}»${NC} 请输入选项: "
+        read -r ch
         case "$ch" in
             1) node_management ;;
             2) run_collector ;;
@@ -924,15 +1148,15 @@ main_menu() {
             5) run_patrol_menu ;;
             6) patrol_daemon_menu ;;
             7) about_project ;;
-            8) echo "感谢使用 DiagMaster。"; exit 0 ;;
-            *) echo "无效指令"; sleep 1 ;;
+            0) echo ""; echo -e "  ${GREEN}感谢使用 DiagMaster，再见！${NC}"; echo ""; exit 0 ;;
+            *) echo ""; echo -e "  ${RED}✖ 无效指令，请重新输入${NC}"; sleep 1 ;;
         esac
     done
 }
 
 patrol_daemon_menu() {
     while true; do
-        header
+        show_brand
         echo -e "${YELLOW}--- [模块 5] 后台巡逻守护进程管理 ---${NC}"
         echo " 1) 启动后台巡逻守护进程"
         echo " 2) 停止后台巡逻守护进程"
@@ -1008,7 +1232,7 @@ if [ $# -gt 0 ]; then
 fi
 
 # ========== 安全认证 ==========
-header
+show_brand
 echo -e "${YELLOW}[安全认证]${NC}"
 read -p "请输入管理员账户: " u
 if [[ "$u" != "$ADMIN_USER" ]]; then
