@@ -1075,6 +1075,8 @@ about_project() {
     echo -e "  ${CYAN}版本${NC}: v2.0 | 代码总量 ~1200 行"
     echo -e "  ${CYAN}许可${NC}: 课程项目，仅供学习交流"
     status_bar "项目信息"
+    printf "  ${CYAN}»${NC} 按回车键返回主菜单..."
+    read -r _
 }
 
 
