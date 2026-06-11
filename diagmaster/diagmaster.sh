@@ -52,6 +52,7 @@ SEP="${CYAN}━━━━━━━━━━━━━━━━━━━━━━�
 THIN_SEP="${DGRAY}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
 
 wt_menu() {
+    clear
     local title="$1"
     local text="$2"
     shift 2
@@ -65,6 +66,7 @@ wt_menu() {
 }
 
 wt_msgbox() {
+    clear
     local title="$1"
     local text="$2"
     local h="${3:-10}" w="${4:-60}"
@@ -72,6 +74,7 @@ wt_msgbox() {
 }
 
 wt_yesno() {
+    clear
     local title="$1"
     local text="$2"
     local h="${3:-8}" w="${4:-50}"
@@ -80,6 +83,7 @@ wt_yesno() {
 }
 
 wt_inputbox() {
+    clear
     local title="$1"
     local text="$2"
     local init="${3:-}"
@@ -152,6 +156,14 @@ show_brand() {
 
 log_action() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+}
+
+show_nodes_with_status() {
+    wt_msgbox "查看节点列表" "功能开发中，稍后开放。\n当前节点数据位置: $NODE_DB" 10 50
+}
+
+add_new_node() {
+    wt_msgbox "新增受控节点" "功能开发中，稍后开放。\n请手动编辑: $NODE_DB" 10 50
 }
 
 node_management() {
