@@ -1,0 +1,21 @@
+[Unit]
+Description=DiagMaster Patrol Daemon
+Documentation=https://github.com/haowendi25-prog/linux-shell-
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/home/%i/linux-shell-/diagmaster
+Environment="ROOT_DIR=/home/%i/linux-shell-/diagmaster"
+Environment="ENABLE_AUTO_HEAL=true"
+Environment="PATROL_INTERVAL=300"
+ExecStart=/bin/bash /home/%i/linux-shell-/diagmaster/modules/patrol.sh --daemon
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=diagmaster-patrol
+
+[Install]
+WantedBy=multi-user.target
