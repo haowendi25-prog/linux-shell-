@@ -183,15 +183,21 @@ add_new_node() {
     show_brand
     section_header "新增受控节点 | 分布式 SSH 管控"
     local new_node
-    new_node=$(wt_inputbox "新增节点" "请输入节点地址 (IP 或 hostname):" "")
+    printf "  ${CYAN}»${NC} 请输入节点地址 (IP 或 hostname，留空取消): "
+    read -r new_node
     [ -z "$new_node" ] && return
     if grep -qxF "$new_node" "$NODE_DB" 2>/dev/null; then
-        wt_msgbox "提示" "节点 $new_node 已存在。" 8 40
+        echo -e "  ${YELLOW}节点 $new_node 已存在。${NC}"
+        printf "  ${CYAN}»${NC} 按回车键返回..."
+        read -r _
         return
     fi
     echo "$new_node" >> "$NODE_DB"
     log_action "新增受控节点: $new_node"
-    wt_msgbox "成功" "节点 $new_node 已添加。\n数据文件: $NODE_DB" 10 50
+    echo -e "  ${GREEN}节点 $new_node 已添加。${NC}"
+    echo -e "  ${DGRAY}数据文件: $NODE_DB${NC}"
+    printf "  ${CYAN}»${NC} 按回车键返回..."
+    read -r _
 }
 
 delete_node() {
@@ -199,35 +205,49 @@ delete_node() {
     show_brand
     section_header "删除失效节点"
     if [ ! -f "$NODE_DB" ] || [ ! -s "$NODE_DB" ]; then
-        wt_msgbox "提示" "暂无节点可删除。" 8 40
+        echo -e "  ${YELLOW}暂无节点可删除。${NC}"
+        printf "  ${CYAN}»${NC} 按回车键返回..."
+        read -r _
         return
     fi
-    local lines
-    lines=$(wc -l < "$NODE_DB" | tr -d ' ')
-    local opts=()
-    local i=0
+    echo -e "  ${CYAN}序号  节点地址${NC}"
+    echo -e "  ${DGRAY}──────────────────────────────────────${NC}"
+    local idx=0
     while IFS= read -r node; do
         [ -z "$node" ] && continue
-        i=$((i + 1))
-        opts+=("$i" "$node")
+        idx=$((idx + 1))
+        printf "  ${GREEN}%-6s${NC} %s\n" "$idx" "$node"
     done < "$NODE_DB"
-    opts+=("0" "取消并返回")
+    echo -e "  ${DGRAY}──────────────────────────────────────${NC}"
     local choice
-    choice=$(wt_menu "删除节点" "请选择要删除的节点编号:" "${opts[@]}")
+    printf "  ${CYAN}»${NC} 请输入要删除的节点编号 (0 取消): "
+    read -r choice
     [ -z "$choice" ] && return
     [ "$choice" = "0" ] && return
+    if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+        echo -e "  ${RED}无效编号。${NC}"
+        printf "  ${CYAN}»${NC} 按回车键返回..."
+        read -r _
+        return
+    fi
     local target
     target=$(sed -n "${choice}p" "$NODE_DB")
     if [ -z "$target" ]; then
-        wt_msgbox "错误" "无效编号。" 8 40
+        echo -e "  ${RED}无效编号。${NC}"
+        printf "  ${CYAN}»${NC} 按回车键返回..."
+        read -r _
         return
     fi
-    if ! wt_yesno "确认删除" "确定要删除节点: $target 吗？"; then
+    printf "  ${YELLOW}确定要删除节点: $target 吗？ (y/N): ${NC}"
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         return
     fi
     grep -vxF "$target" "$NODE_DB" > "${NODE_DB}.tmp" && mv "${NODE_DB}.tmp" "$NODE_DB"
     log_action "删除节点: $target"
-    wt_msgbox "完成" "节点 $target 已删除。" 8 40
+    echo -e "  ${GREEN}节点 $target 已删除。${NC}"
+    printf "  ${CYAN}»${NC} 按回车键返回..."
+    read -r _
 }
 
 test_node_connection() {
