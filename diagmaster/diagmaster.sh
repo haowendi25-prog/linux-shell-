@@ -42,7 +42,51 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
+CYAN_BOX='\033[44;37m'
+DGRAY='\033[90m'
+LGRAY='\033[37m'
+BOLD='\033[1m'
 NC='\033[0m'
+SP="  "
+SEP="${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+THIN_SEP="${DGRAY}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
+
+header() {
+    clear
+    echo ""
+    echo -e "  ${CYAN_BOX}  DiagMaster v2.0 | 服务器多维智能诊断运维平台  ${NC}"
+    echo -e "  ${SEP}"
+    echo ""
+}
+
+top_bar() {
+    echo ""
+    echo -e "  ${CYAN_BOX}  DiagMaster v2.0 | 服务器多维智能诊断运维平台  ${NC}"
+    echo -e "  ${SEP}"
+}
+
+section_header() {
+    echo -e "\n  ${BOLD}${GREEN}▸ ${1}${NC}\n"
+}
+
+loading() {
+    local text="${1:-处理中}"
+    echo -e -n "  ${DGRAY}[${LGRAY}INFO${DGRAY}]${NC} ${text}"
+    for i in 1 2 3; do
+        sleep 0.15
+        echo -n "."
+    done
+    echo -e " ${GREEN}✓${NC}\n"
+}
+
+status_bar() {
+    local status="${1:-正常}"
+    echo ""
+    echo -e "  ${DGRAY}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
+    echo -e "  ${DGRAY}●${NC} 系统状态: ${GREEN}[${status}]${NC}   ${DGRAY}⏰${NC} $(date '+%Y-%m-%d %H:%M:%S')"
+    echo -e "  ${DGRAY}💡 提示: 输入功能编号并回车执行; 返回主菜单请输 0 或 q${NC}"
+    echo ""
+}
 
 show_brand() {
     clear
@@ -77,19 +121,15 @@ log_action() {
 node_management() {
     while true; do
         clear
-        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
-        echo -e "  ${CYAN}│${NC}  ${RED}■${NC} ${YELLOW}节点管理${NC}                                     ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  分布式服务器资产与 SSH 管控中心                     ${CYAN}│${NC}"
-        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -e "  ${GREEN}1${NC}) 查看受控节点列表（含状态）"
-        echo -e "  ${GREEN}2${NC}) 新增受控服务器节点"
-        echo -e "  ${GREEN}3${NC}) 删除失效服务器节点"
-        echo -e "  ${GREEN}4${NC}) 测试节点连接"
-        echo -e "  ${GREEN}5${NC}) 查看节点详细信息"
-        echo -e "  ${GREEN}6${NC}) 批量远程诊断（分布式采集）"
-        echo -e "  ${RED}0${NC}) 返回主菜单"
-        echo ""
+        show_brand
+        section_header "节点管理 | 分布式服务器资产与 SSH 管控"
+        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
+            "1) 查看节点列表" "2) 新增受控节点" "3) 删除失效节点"
+        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
+            "4) 测试节点连接" "5) 查看节点详情"
+        printf "  ${YELLOW}%-20s${NC}  ${RED}%-20s${NC}\n" \
+            "6) 批量远程诊断" "0) 返回主菜单"
+        status_bar "就绪"
         printf "  ${CYAN}»${NC} 请输入选项: "
         read -r nc
         case "$nc" in
@@ -98,8 +138,8 @@ node_management() {
             3) delete_node ;;
             4) test_node_connection ;;
             5) show_node_details ;;
-            6) remote_diagnostics ;;
-            7|0) return ;;
+            6) batch_remote_diagnose ;;
+            0|q|Q) return ;;
             *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
         esac
     done
@@ -870,119 +910,110 @@ disk_cleanup() {
 
 run_patrol_menu() {
     clear
-    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}自动巡检${NC}                                     ${CYAN}│${NC}"
-    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
-    echo ""
+    show_brand
+    section_header "自动巡检 | 一键系统健康检查"
+    loading "正在执行系统巡检"
     run_patrol
     local ret=$?
     if [ $ret -eq 0 ]; then
-        echo ""
         echo -e "  ${GREEN}✓ 巡逻完成：系统状态正常。${NC}"
     else
-        echo ""
         echo -e "  ${RED}⚠ 巡逻完成：发现异常项，请查看报告。${NC}"
     fi
     log_action "执行自动巡逻"
-    printf "\n  ${CYAN}»${NC} 按回车键返回主菜单..."
+    status_bar "巡检完成"
+    printf "  ${CYAN}»${NC} 按回车键返回主菜单..."
     read -r _
 }
 
 about_project() {
     clear
-    echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
-    echo -e "  ${CYAN}│${NC}  ${RED}■${NC} ${YELLOW}关于项目${NC}                                     ${CYAN}│${NC}"
-    echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
-    echo ""
-    echo -e "   ${CYAN}团队${NC}: 翟浩雯、李薇"
-    echo -e "   ${CYAN}技术${NC}: Bash, grep/awk/sed, 并发进程, 日志分析,"
-    echo -e "           系统监控, 配置解耦, 自动巡逻"
-    echo ""
-    echo -e "   ${CYAN}架构${NC}: 模块化设计，SSH 分布式管控，"
-    echo -e "           JSON/Markdown 双格式报告输出"
-    printf "\n  ${CYAN}»${NC} 按回车键返回主菜单..."
+    show_brand
+    section_header "关于项目 | 技术架构与团队"
+    echo -e "  ${DGRAY}团队${NC}: 翟浩雯、李薇"
+    echo -e "  ${DGRAY}技术${NC}: Bash, grep/awk/sed, 并发进程, 日志分析,"
+    echo -e "         系统监控, 配置解耦, 自动巡逻"
+    echo -e "  ${DGRAY}架构${NC}: 模块化设计，SSH 分布式管控，"
+    echo -e "         JSON/Markdown 双格式报告输出"
+    status_bar "项目信息"
+    printf "  ${CYAN}»${NC} 按回车键返回主菜单..."
     read -r _
 }
 
 patrol_daemon_menu() {
     while true; do
         clear
-        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}■${NC} ${YELLOW}后台守护${NC}                                     ${CYAN}│${NC}"
-        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
-        echo ""
-        echo -e "  ${GREEN}1${NC}) 启动后台巡逻守护进程"
-        echo -e "  ${GREEN}2${NC}) 停止后台巡逻守护进程"
-        echo -e "  ${GREEN}3${NC}) 查看守护进程状态"
-        echo -e "  ${RED}0${NC}) 返回主菜单"
-        echo ""
+        show_brand
+        section_header "后台守护 | 定时巡逻守护进程管理"
+        printf "  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}  ${GREEN}%-20s${NC}\n" \
+            "1) 启动守护进程" "2) 停止守护进程" "3) 查看运行状态"
+        printf "  ${RED}%-20s${NC}\n" \
+            "0) 返回主菜单"
+        status_bar "就绪"
         printf "  ${CYAN}»${NC} 请输入选项: "
         read -r nc
         case "$nc" in
-            1) run_patrol_daemon && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
-            2) stop_patrol_daemon && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
-            3) patrol_daemon_status && printf "\n  ${CYAN}»${NC} 按回车键返回..." && read -r _ ;;
-            0) return ;;
+            1) loading "正在启动守护进程"; run_patrol_daemon; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
+            2) loading "正在停止守护进程"; stop_patrol_daemon; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
+            3) patrol_daemon_status; printf "\n  ${CYAN}»${NC} 按回车键返回..."; read -r _ ;;
+            0|q|Q) return ;;
             *) echo ""; echo -e "  ${RED}✖ 无效指令${NC}"; sleep 1 ;;
         esac
     done
+}
+
+show_brand() {
+    echo ""
+    echo -e "  ${CYAN_BOX}  DiagMaster v2.0 | 服务器多维智能诊断运维平台  ${NC}"
+    echo -e "  ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+section_header() {
+    echo -e "\n  ${BOLD}${YELLOW}▸ ${1}${NC}\n"
+}
+
+loading() {
+    local text="${1:-处理中}"
+    echo -e -n "  ${DGRAY}[${LGRAY}INFO${DGRAY}]${NC} ${text}"
+    for i in 1 2 3; do
+        sleep 0.12
+        echo -n "."
+    done
+    echo -e " ${GREEN}✓${NC}\n"
+}
+
+status_bar() {
+    local status="${1:-正常}"
+    echo ""
+    echo -e "  ${DGRAY}┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄${NC}"
+    echo -e "  ${DGRAY}●${NC} 系统状态: ${GREEN}[${status}]${NC}   ${DGRAY}⏰${NC} $(date '+%Y-%m-%d %H:%M:%S')"
+    echo -e "  ${DGRAY}💡 提示: 输入功能编号并回车执行; 返回主菜单请输 0 或 q${NC}"
+    echo ""
 }
 
 main_menu() {
     while true; do
         clear
         show_brand
-        echo -e "  ${CYAN}┌─────────────────────────────────────────────────┐${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}1${NC}  节点管理       ${CYAN}│${NC}  分布式服务器资产与SSH管控           ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}2${NC}  性能监控       ${CYAN}│${NC}  CPU/内存/磁盘多进程并行采集         ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}3${NC}  安全审计       ${CYAN}│${NC}  内核日志清洗与风险评分              ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}4${NC}  磁盘清理       ${CYAN}│${NC}  智能清理与自愈修复                  ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}5${NC}  自动巡检       ${CYAN}│${NC}  一键系统健康检查                    ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}6${NC}  后台守护       ${CYAN}│${NC}  定时巡逻守护进程管理                ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${GREEN}7${NC}  关于项目       ${CYAN}│${NC}  技术架构与团队介绍                  ${CYAN}│${NC}"
-        echo -e "  ${CYAN}│${NC}  ${YELLOW}▸${NC} ${RED}0${NC}  安全退出       ${CYAN}│${NC}                                      ${CYAN}│${NC}"
-        echo -e "  ${CYAN}└─────────────────────────────────────────────────┘${NC}"
-        echo ""
-        printf "  ${CYAN}»${NC} 请输入选项: "
+        echo -e "  ${BOLD}🚀 快速操作入口${NC}"
+        printf "  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}\n" \
+            "1) 节点资产" "2) 性能监控" "3) 安全审计" "4) 磁盘清理"
+        printf "  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${GREEN}%-18s${NC}${DGRAY}|${NC}  ${YELLOW}%-18s${NC}${DGRAY}|${NC}  ${RED}%-18s${NC}\n" \
+            "5) 自动巡检" "6) 后台守护" "7) 关于项目" "0) 安全退出"
+        echo -e "  ${SEP}"
+        status_bar "在线"
+        printf "  ${CYAN}»${NC} 请输入功能编号: "
         read -r ch
         case "$ch" in
-            1) node_management ;;
-            2) run_collector ;;
-            3) run_log_audit ;;
-            4) disk_cleanup ;;
-            5) run_patrol_menu ;;
-            6) patrol_daemon_menu ;;
-            7) about_project ;;
-            0) echo ""; echo -e "  ${GREEN}感谢使用 DiagMaster，再见！${NC}"; echo ""; exit 0 ;;
+            1) loading "正在加载节点管理模块"; node_management ;;
+            2) loading "正在加载性能监控模块"; run_collector ;;
+            3) loading "正在加载安全审计模块"; run_log_audit ;;
+            4) loading "正在加载磁盘清理模块"; disk_cleanup ;;
+            5) loading "正在加载自动巡检模块"; run_patrol_menu ;;
+            6) loading "正在加载后台守护模块"; patrol_daemon_menu ;;
+            7) loading "正在加载关于项目"; about_project ;;
+            0|q|Q) echo ""; echo -e "  ${GREEN}感谢使用 DiagMaster，再见！${NC}"; echo ""; exit 0 ;;
             *) echo ""; echo -e "  ${RED}✖ 无效指令，请重新输入${NC}"; sleep 1 ;;
-        esac
-    done
-}
-
-patrol_daemon_menu() {
-    while true; do
-        show_brand
-        echo -e "${YELLOW}--- [模块 5] 后台巡逻守护进程管理 ---${NC}"
-        echo " 1) 启动后台巡逻守护进程"
-        echo " 2) 停止后台巡逻守护进程"
-        echo " 3) 查看守护进程状态"
-        echo " 4) 返回主菜单"
-        read -p "请输入子菜单指令 (1-4): " nc
-        case "$nc" in
-            1)
-                 run_patrol_daemon
-                 read -p "按回车键返回..." _
-                 ;;
-             2)
-                 stop_patrol_daemon
-                 read -p "按回车键返回..." _
-                 ;;
-             3)
-                 patrol_daemon_status
-                 read -p "按回车键返回..." _
-                 ;;
-            4) return ;;
-            *) echo "无效指令"; sleep 1 ;;
         esac
     done
 }
