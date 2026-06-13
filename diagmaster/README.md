@@ -2,7 +2,7 @@
 
 > 不会 Linux 也能用的服务器"体检仪"。像量体温一样简单，输入几个数字，自动帮你检查服务器哪里出毛病了。
 
-- **版本**：v2.0
+- **版本**：v3.0
 - **开发团队**：翟浩雯（组长）、李薇（组员）
 - **技术底座**：纯 Bash 5.x，零外部 Python/Go 依赖，Ubuntu / WSL 开箱即用
 
@@ -26,7 +26,7 @@
 cd ~/linux-shell-/diagmaster
 
 # 第 2 步：一键安装（赋予执行权限）
-make install
+chmod +x diagmaster.sh modules/*.sh tests/*.sh
 
 # 第 3 步：启动主程序
 bash diagmaster.sh
@@ -78,7 +78,7 @@ bash diagmaster.sh
 
 **负责人**：李薇
 
-**解决的问题**：服务器“卡了”但不知道是 CPU、内存还是磁盘引起的。
+**解决的问题**：服务器"卡了"但不知道是 CPU、内存还是磁盘引起的。
 
 **核心功能**：
 - `collect_remote` 函数封装，支持本地/远程统一调用
@@ -262,19 +262,23 @@ diagmaster/
 │
 ├── backup/                    # 备份存档目录
 │
+├── docs/
+│   ├── 项目报告.md            # 课程项目报告
+│   ├── 软件使用说明书.md      # 软件使用说明书
+│   └── 答辩PPT脚本.md         # 答辩PPT脚本
+│
 └── tests/
-    ├── run_all_tests.sh       # 一键运行全部 75 个测试
-    ├── test_patrol.sh         # 巡逻模块单元+集成+异常测试（20 例）
-    ├── test_collector.sh      # 性能采集模块测试（9 例）
-    ├── test_boundary.sh       # 边界条件测试（6 例）
-    ├── test_auto.sh           # 自动化运行验证测试（4 例）
-    ├── test_utils.sh          # 公共工具库测试（8 例）
-    ├── test_log_analyzer.sh   # 安全审计模块测试（12 例）
-    ├── test_integration_real.sh # 真实环境集成冒烟测试（16 例）
-    ├── test_project_report6.sh # 交互式综合测试菜单（27 例，答辩用）
+    ├── run_all_tests.sh          # 一键运行全部 75 个测试
+    ├── test_patrol.sh            # 巡逻模块单元+集成+异常测试（20 例）
+    ├── test_collector.sh         # 性能采集模块测试（9 例）
+    ├── test_boundary.sh          # 边界条件测试（6 例）
+    ├── test_auto.sh              # 自动化运行验证测试（4 例）
+    ├── test_utils.sh             # 公共工具库测试（8 例）
+    ├── test_log_analyzer.sh      # 安全审计模块测试（12 例）
+    ├── test_integration_real.sh  # 真实环境集成冒烟测试（16 例：功能4+边界4+异常4+自动化4）
     ├── lib/
-    │   └── mock_utils.sh      # 共享 Mock 工具库
-    └── screenshots/           # 测试截图存档
+    │   └── mock_utils.sh         # 共享 Mock 工具库
+    └── screenshots/              # 测试截图存档
 ```
 
 ---
@@ -304,24 +308,25 @@ diagmaster/
 
 ## 测试
 
-项目自带 75 个自动化测试用例：
+项目采用双层测试体系，共 75 个自动化测试用例：
+
+**Mock 单元测试（59 例）**：使用 Mock 机制模拟系统命令输出，快速验证逻辑正确性
+
+**真实环境冒烟测试（16 例）**：直接调用真实系统命令，验证在当前 OS 上的实际可用性，覆盖功能/边界/异常/自动化四类场景
 
 ```bash
 # 一键运行全部测试
 bash tests/run_all_tests.sh
 
 # 单独运行某类测试
-bash tests/test_patrol.sh        # 巡逻模块 20 例
-bash tests/test_collector.sh     # 性能采集模块 9 例
-bash tests/test_boundary.sh      # 边界条件 6 例
-bash tests/test_auto.sh          # 自动化验证 4 例
-bash tests/test_utils.sh         # 公共工具库 8 例
-bash tests/test_log_analyzer.sh  # 安全审计模块 12 例
-bash tests/test_integration_real.sh  # 真实环境冒烟测试 16 例
-bash tests/test_project_report6.sh  # 交互式综合测试（27 例，答辩用）
+bash tests/test_patrol.sh            # 巡逻模块测试（20 例）
+bash tests/test_collector.sh         # 性能采集模块测试（9 例）
+bash tests/test_boundary.sh          # 边界条件测试（6 例）
+bash tests/test_auto.sh              # 自动化运行验证测试（4 例）
+bash tests/test_utils.sh             # 公共工具库测试（8 例）
+bash tests/test_log_analyzer.sh      # 安全审计模块测试（12 例）
+bash tests/test_integration_real.sh  # 真实环境冒烟测试（16 例）
 ```
-
-> 测试采用 Mock 机制，不产生副作用，不会影响真实服务器数据。
 
 ---
 
@@ -329,7 +334,7 @@ bash tests/test_project_report6.sh  # 交互式综合测试（27 例，答辩用
 
 **Q: 运行时报 "Permission denied"？**
 ```bash
-make install   # 或手动 chmod +x diagmaster.sh modules/*.sh
+chmod +x diagmaster.sh modules/*.sh tests/*.sh
 ```
 
 **Q: 忘记密码？**
@@ -347,7 +352,7 @@ make install   # 或手动 chmod +x diagmaster.sh modules/*.sh
 
 - **开发环境**：Ubuntu 22.04 / WSL2
 - **代码规模**：主入口 ~1229 行，3 个业务模块 + 公共库 ~2200 行，总计 ~3400 行
-- **测试覆盖**：75 个自动化测试用例
+- **测试覆盖**：75 个自动化测试用例（Mock 59 + 真实环境 16）
 - **提交规范**： Conventional Commits（feat/fix/docs/perf/chore）
 
 ---
