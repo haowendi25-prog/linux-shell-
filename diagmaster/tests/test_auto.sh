@@ -48,6 +48,7 @@ test_auto_consistency() {
         run_patrol >/dev/null 2>&1
         ret=$?
         results+=($ret)
+        sleep 1
     done
     local all_same="是"
     for r in "${results[@]}"; do
@@ -111,7 +112,7 @@ test_auto_unattended() {
         if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
             success_rounds=$((success_rounds + 1))
         fi
-        sleep 0.1
+        sleep 1
     done
     local report_count
     report_count=$(ls -1 "$PATROL_REPORT_DIR"/*.md 2>/dev/null | wc -l)

@@ -609,6 +609,7 @@ test_auto_01_single_run_consistency() {
         run_patrol >/dev/null 2>&1
         ret=$?
         results+=($ret)
+        sleep 1
     done
     local all_same="是"
     for r in "${results[@]}"; do
@@ -648,6 +649,7 @@ test_auto_02_continuous_operation() {
         if [ "$ret" -ne 0 ] && [ "$ret" -ne 1 ]; then
             crashes=$((crashes + 1))
         fi
+        sleep 1
     done
     teardown_mocks
     print_expected_actual \
@@ -683,7 +685,7 @@ test_auto_03_unattended_daemon_simulation() {
         if [ "$ret" -eq 0 ] || [ "$ret" -eq 1 ]; then
             success_rounds=$((success_rounds + 1))
         fi
-        sleep 0.1  # 模拟巡逻间隔
+        sleep 1  # 模拟巡逻间隔，确保报告文件名不重复
     done
     local report_count
     report_count=$(ls -1 "$PATROL_REPORT_DIR"/*.md 2>/dev/null | wc -l)

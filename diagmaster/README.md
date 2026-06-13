@@ -229,7 +229,7 @@ sudo ./diagmaster.sh --daemon
 
 ```
 diagmaster/
-├── diagmaster.sh              # ★ 主入口，程序入口
+├── diagmaster.sh              # ★ 主入口，程序入口（~1229 行）
 ├── README.md                  # ★ 本文件
 │
 ├── config/
@@ -242,11 +242,13 @@ diagmaster/
 │   └── patrol.sh              # 模块5/6：自动巡检 + 后台守护
 │
 ├── lib/
-│   └── utils.sh               # SSH 工具函数 + 公共工具（日志/颜色/阈值）
+│   ├── utils.sh               # SSH 工具函数 + 公共工具（日志/颜色/阈值）
+│   └── assert.sh              # 轻量级测试断言库
 │
 ├── data/
 │   ├── nodes.txt              # 受控节点列表（IP/hostname，每行一个）
-│   └── history/               # 历史采集数据缓存
+│   ├── *.tmp                  # 临时数据文件（cpu/mem/disk/oom 等中间结果）
+│   └── history/               # 历史采集数据缓存（collect_*.log）
 │
 ├── logs/
 │   ├── activity.log           # 操作日志（用户行为审计）
@@ -255,20 +257,24 @@ diagmaster/
 ├── reports/
 │   ├── diag_report_*.md       # 安全审计报告（Markdown）
 │   ├── diag_report_*.json     # 安全审计报告（JSON）
+│   ├── patrol_*.md            # 自动巡逻报告
 │   └── disk_cleanup_*.log     # 磁盘清理详细日志
 │
-├── tests/
-│   ├── run_all_tests.sh       # 一键运行全部 31 个测试
-│   ├── test_patrol.sh         # 巡逻模块 18 例
-│   ├── test_boundary.sh       # 边界条件 6 例
-│   └── lib/mock_utils.sh      # 共享 Mock 库
+├── backup/                    # 备份存档目录
 │
-├── docs/
-│   ├── 项目规划书.md
-│   ├── 答辩PPT内容.md
-│   └── 软件使用说明.md
-│
-└── Makefile                   # 安装入口（make install / make clean）
+└── tests/
+    ├── run_all_tests.sh       # 一键运行全部 75 个测试
+    ├── test_patrol.sh         # 巡逻模块单元+集成+异常测试（20 例）
+    ├── test_collector.sh      # 性能采集模块测试（9 例）
+    ├── test_boundary.sh       # 边界条件测试（6 例）
+    ├── test_auto.sh           # 自动化运行验证测试（4 例）
+    ├── test_utils.sh          # 公共工具库测试（8 例）
+    ├── test_log_analyzer.sh   # 安全审计模块测试（12 例）
+    ├── test_integration_real.sh # 真实环境集成冒烟测试（16 例）
+    ├── test_project_report6.sh # 交互式综合测试菜单（27 例，答辩用）
+    ├── lib/
+    │   └── mock_utils.sh      # 共享 Mock 工具库
+    └── screenshots/           # 测试截图存档
 ```
 
 ---
@@ -298,17 +304,21 @@ diagmaster/
 
 ## 测试
 
-项目自带 31 个自动化测试用例：
+项目自带 75 个自动化测试用例：
 
 ```bash
 # 一键运行全部测试
 bash tests/run_all_tests.sh
 
 # 单独运行某类测试
-bash tests/test_patrol.sh      # 巡逻模块 18 例
-bash tests/test_boundary.sh    # 边界条件 6 例
-bash tests/test_auto.sh        # 自动化验证 4 例
-bash tests/test_project_report6.sh  # 交互式综合测试（答辩用）
+bash tests/test_patrol.sh        # 巡逻模块 20 例
+bash tests/test_collector.sh     # 性能采集模块 9 例
+bash tests/test_boundary.sh      # 边界条件 6 例
+bash tests/test_auto.sh          # 自动化验证 4 例
+bash tests/test_utils.sh         # 公共工具库 8 例
+bash tests/test_log_analyzer.sh  # 安全审计模块 12 例
+bash tests/test_integration_real.sh  # 真实环境冒烟测试 16 例
+bash tests/test_project_report6.sh  # 交互式综合测试（27 例，答辩用）
 ```
 
 > 测试采用 Mock 机制，不产生副作用，不会影响真实服务器数据。
@@ -336,8 +346,8 @@ make install   # 或手动 chmod +x diagmaster.sh modules/*.sh
 ## 开发信息
 
 - **开发环境**：Ubuntu 22.04 / WSL2
-- **代码规模**：主入口 ~1100 行，3 个业务模块 ~1000 行，总计 ~2100 行
-- **测试覆盖**：31 个自动化测试用例
+- **代码规模**：主入口 ~1229 行，3 个业务模块 + 公共库 ~2200 行，总计 ~3400 行
+- **测试覆盖**：75 个自动化测试用例
 - **提交规范**： Conventional Commits（feat/fix/docs/perf/chore）
 
 ---

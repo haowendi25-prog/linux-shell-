@@ -1,0 +1,3 @@
+[2026-06-13 12:00:00] Out of memory: Kill process 1234 (java)
+[2026-06-13 12:00:01] invoked oom-killer: gfp_mask=0x201da
+[2026-06-13 12:00:02] Out of memory: Kill process 5678 (mysql)

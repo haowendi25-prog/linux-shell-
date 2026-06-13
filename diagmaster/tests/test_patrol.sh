@@ -290,7 +290,7 @@ test_config_missing() {
 run_all_tests() {
     echo ""
     echo "=============================================="
-    echo "  DiagMaster 巡逻模块 - 单元/集成测试 (18例)"
+    echo "  DiagMaster 巡逻模块 - 单元/集成测试 (20例)"
     echo "=============================================="
     echo ""
 
