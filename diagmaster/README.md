@@ -12,8 +12,8 @@
 
 | 成员 | 角色 | 具体任务 |
 |------|------|----------|
-| **翟浩雯** | 组长 | 主程序框架 `diagmaster.sh`、模块1（节点管理）SSH 分布式通信、模块6（后台守护）systemd 服务封装、公共库 `lib/utils.sh`、项目 README 与答辩文档 |
-| **李薇** | 组员 | 模块2（性能监控）`modules/collector.sh` 多进程并行采集、模块3（安全审计）`modules/log_analyzer.sh` 内核日志清洗与风险评分、模块4（磁盘清理）智能扫描与自愈修复、测试用例 `tests/` 与 `config/diag.conf` 维护 |
+| **翟浩雯** | 组长 | 主程序框架 `diagmaster.sh`、模块1（节点资产）分布式SSH管控、模块4（磁盘清理）自愈修复、模块5（自动巡检）、模块6（后台守护）systemd服务封装、公共库 `lib/utils.sh`、项目 README 与答辩文档 |
+| **李薇** | 组员 | 模块2（性能监控）`modules/collector.sh` 多进程并行采集、模块3（安全审计）`modules/log_analyzer.sh` 内核日志清洗与风险评分、测试用例 `tests/`、配置文件 `config/diag.conf` 维护 |
 
 > 规范说明：两名成员均承担完整模块开发 + 测试 + 文档工作，确保每人独立闭环。
 
